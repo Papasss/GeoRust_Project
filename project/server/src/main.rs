@@ -7,7 +7,7 @@ use crate::serverState::ServerState;
 
 mod serverState;
 mod auth;
-
+mod analytics;
 
 #[tokio::main]
 async fn main() {
