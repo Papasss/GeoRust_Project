@@ -5,7 +5,8 @@ use std::process;
 
 pub mod messages;
 pub mod coordinates;
-pub mod userstate;
+pub mod userState;
+pub mod updatePosition;
 
 pub fn read_file(path: &str) -> io::Result<File> {
 
