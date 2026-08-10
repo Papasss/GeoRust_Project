@@ -1,6 +1,10 @@
 use shared::coordinates;
+use shared::coordinates;
 use shared::read_file;
 use shared::parse_values;
+use shared::updatePosition::UpdatePosition;
+use shared::coordinates::Coordinates;
+use std::collections::HashMap;
 use shared::updatePosition::UpdatePosition;
 use shared::coordinates::Coordinates;
 use std::collections::HashMap;
@@ -66,5 +70,7 @@ async fn main() -> io::Result<()> {
     Ok(())   
 
 }
+
+
 
 
