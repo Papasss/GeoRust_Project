@@ -17,7 +17,8 @@ fn main() {
 
     let mut reader = BufReader::new(stream.try_clone().unwrap());
 
-    // --- FASE DI AUTENTICAZIONE ---
+    // Autenticazione
+    
     let username = auth_flow::run_auth_flow(&mut stream, &mut reader);
 
     println!("Authenticated successfully as: {}", username);
