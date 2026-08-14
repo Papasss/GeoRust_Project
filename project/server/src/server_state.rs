@@ -146,6 +146,29 @@ impl ServerState {
 
 
 
+    // Definisce il percorso dei log a seconda del sistema opeativo
+
+    #[cfg(target_os = "windows")]
+    fn get_log_dir() -> &'static str {
+        "server/logs/windows"
+    }
+
+    #[cfg(target_os = "macos")]
+    fn get_log_dir() -> &'static str {
+        "server/logs/macos"
+    }
+
+    #[cfg(target_os = "linux")]
+    fn get_log_dir() -> &'static str {
+        "server/logs/linux"
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    fn get_log_dir() -> &'static str {
+        "server/logs/other"
+    }
+
+
     // Si occupa materialmente di formattare e scrivere i log sul disco.
     // Assicura che la cartella dei log esista, apre o crea il file di testo, 
     // e vi aggiunge una nuova riga contenente la data, l'ora e i secondi di 
@@ -153,9 +176,11 @@ impl ServerState {
     
     async fn write_cpu_usage(cpu_time: Duration) -> Result<(), std::io::Error> {
         
-        tokio::fs::create_dir_all("server/logs").await?;
+        let path = Self::get_log_dir();
 
-        let mut file = OpenOptions::new().create(true).append(true).open("server/logs/cpu_performance.log").await?;
+        tokio::fs::create_dir_all(path).await?;
+
+        let mut file = OpenOptions::new().create(true).append(true).open(format!("{path}/cpu_performance.log")).await?;
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
         let log_line = format!("[{}] Server's CPU time: {:.6} s\n", timestamp, cpu_time.as_secs_f64());
 
