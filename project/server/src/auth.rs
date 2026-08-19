@@ -1,5 +1,5 @@
 //AUTENTICAZIONE E REGISTRAZIONE
-use crate::serverState::ServerState;
+use crate::server_state::ServerState;
 use std::collections::HashMap;
 use std::fs;
 
@@ -29,30 +29,37 @@ fn hash_password(password: &str) -> String {
 
 // secondo blocco impl per ServerState, per accounts
 impl ServerState {
-    /// Carica gli account da file, se esiste. Se il file non c'è
-    /// (prima esecuzione), non è un errore: si parte con zero account.
+
+
+    // Carica gli account da file, se esiste.
+
     pub fn load_accounts(&mut self, path: &str) {
+
         match fs::read_to_string(path) {
             Ok(content) => {
                 match serde_json::from_str::<HashMap<String, String>>(&content) {
                     Ok(accounts) => {
                         self.accounts= accounts;
-                        println!("Loaded {} accounts from {}", self.accounts.len(), path);
+                        println!("\t\t\tLoaded {} accounts from {}", self.accounts.len(), path);
                     }
                     Err(e) => {
-                        eprintln!("Accounts file corrupted or malformed: {}", e);
+                        eprintln!("\t\t\tAccounts file corrupted or malformed: {}", e);
                     }
                 }
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                println!("No existing accounts file found, starting empty.");
+                println!("\t\t\tNo existing accounts file found, starting empty.");
             }
             Err(e) => {
-                eprintln!("Error reading accounts file: {}", e);
+                eprintln!("\t\t\tError reading accounts file: {}", e);
             }
         }
     }
-    /// Salva tutti gli account su file, in formato JSON
+
+
+
+    // Salva tutti gli account su file, in formato JSON
+
     pub fn save_accounts(&self, path: &str) -> std::io::Result<()> {
         let json = serde_json::to_string_pretty(&self.accounts)
             .expect("Errore nella serializzazione degli account");
