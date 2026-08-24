@@ -16,17 +16,15 @@ pub fn read_file(path: &str) -> io::Result<File> {
             match e.kind() {
                 ErrorKind::PermissionDenied => {
                     eprintln!("Permission denied");
-                    process::exit(1);
                 }
                 ErrorKind::NotFound => {
                     eprintln!("File does not exist");
-                    process::exit(1);
                 }
                 _ => {
                     eprintln!("Generic error: {}", e); 
-                    process::exit(1);
                 }
             } 
+            return Err(e);
         }
     };
 
