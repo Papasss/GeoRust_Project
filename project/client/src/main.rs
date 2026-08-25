@@ -2,29 +2,52 @@ use shared::read_file;
 use shared::parse_values;
 use shared::update_position::UpdatePosition;
 use shared::coordinates::Coordinates;
+use shared::messages::Message;
+
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::Path;
 use std::fs;
+use std::fmt::Debug;
+
 use tokio::net::TcpStream;
 use tokio::io::AsyncWriteExt;
+use tokio::io::AsyncWrite;
 use tokio::time::Duration;
+use tokio::sync::mpsc;
+
 use serde::Serialize;
-use std::fmt::Debug;
 use rand::Rng;
 use chrono::DateTime;
 
 mod auth_flow;
+mod menu;
 
-async fn send_to_server<T>(stream: &mut TcpStream, pacchetto: &T) where T: Serialize + Debug {
+//Tutto ciò che può essere spedito al server dal client
+pub enum Outgoing {
+    Chat(Message),
+    Position(UpdatePosition),
+}
+
+pub async fn send_to_server<T, W>(writer: &mut W, pacchetto: &T)
+where
+    T: Serialize + Debug,
+    W: AsyncWrite + Unpin,
+{
     let json_data = serde_json::to_string(pacchetto).expect("Errore nella conversione in JSON");
 
-    if let Err(e) = stream.write_all(format!("{}\n", json_data).as_bytes()).await {
+    if let Err(e) = writer.write_all(format!("{}\n", json_data).as_bytes()).await {
         eprintln!("Errore durante l'invio dei dati al server: {}", e);
-    } else {
-        println!("[OK] Inviato: {:?}", pacchetto);
     }
 }
 
+/// Legge una riga da terminale, con un prompt, e la ripulisce
+pub fn read_line_trimmed(prompt: &str) -> String {
+    print!("{prompt}");
+    io::stdout().flush().unwrap();
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).expect("Errore durante la lettura dell'input");
+    input.trim().to_string()
+}
 
 fn create_random_path(file_path: &str) {
     let mut file = fs::File::create(file_path).expect("Impossibile creare il file del percorso");
@@ -64,85 +87,112 @@ fn create_random_path(file_path: &str) {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    println!("Starting Client Application...");
+    println!("Avvio dell'applicazione Client...");
 
-    let mut stream = match TcpStream::connect("127.0.0.1:8080").await {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("Failed to connect to server: {}", e);
-            return Ok(());
+    loop {
+        let mut stream = match TcpStream::connect("127.0.0.1:8080").await {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("Impossibile connettersi al server: {}", e);
+                return Ok(());
+            }
+        };
+        println!("Connessione al server stabilita!");
+
+
+        // --- FASE DI AUTENTICAZIONE ---
+        let username = auth_flow::run_auth_flow(&mut stream).await;
+        
+        // TEST
+        //let username = "Vanessa".to_string(); 
+
+        // --- GESTIONE DELLA CARTELLA E DEL FILE ---
+        let user_dir = format!("client/{}", username);
+        let file_path = format!("{}/percorso.txt", user_dir);
+        let path = Path::new(&user_dir);
+
+        // Se la cartella dell'utente non esiste, la creiamo e generiamo le coordinate
+        if !path.exists() {
+            println!("\nCreazione della cartella e del percorso di {} ...", username);
+            fs::create_dir_all(path)?;
+            genera_percorso_random(&file_path);
+        } else {
+            println!("\nUtente '{}' esistente. Lettura del file esistente...", username);
         }
-    };
-    println!("Connect to server!");
 
-    let mut reader = BufReader::new(stream.try_clone().unwrap());
+        // --- FASE DI LETTURA DEL FILE ---
+        let mut percorso: Vec<UpdatePosition> = Vec::new();
 
-    // Autenticazione
-    
-    let username = auth_flow::run_auth_flow(&mut stream, &mut reader);
-    
-    // TEST
-    //let username = "Vanessa".to_string(); 
+        let file = read_file(&file_path)?;
+        let reader = BufReader::new(file);
 
-    println!("Authenticated successfully as: {}", username);
+        for line_result in reader.lines() {
+            let line = line_result?;
+            let values = parse_values(&line);
 
-    // --- GESTIONE DELLA CARTELLA E DEL FILE ---
-    let user_dir = format!("client/{}", username);
-    let file_path = format!("{}/percorso.txt", user_dir);
-    let path = Path::new(&user_dir);
-
-    // Se la cartella dell'utente non esiste, la creiamo e generiamo le coordinate
-    if !path.exists() {
-        println!("Nuovo utente '{}'. Creazione della cartella e del percorso...", username);
-        fs::create_dir_all(path)?;
-        create_random_path(&file_path);
-    } else {
-        println!("Utente '{}' esistente. Lettura del file esistente...", username);
-    }
-
-    // --- FASE DI LETTURA DEL FILE ---
-    let mut percorso: Vec<UpdatePosition> = Vec::new();
-
-    let file = read_file(&file_path)?;
-    let reader = BufReader::new(file);
-
-    for line_result in reader.lines() {
-        let line = line_result?;
-        let values = parse_values(&line);
-
-        if values.is_empty() {
-            continue;
-        }
+            if values.is_empty() {
+                continue;
+            }
 
         let coordinates  = Coordinates::new(values[0].clone(), values[1].clone());
         let time = DateTime::parse_from_rfc3339(&values[2])
             .map(|time| time.with_timezone(&chrono::Utc))
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
-        let update_position = UpdatePosition {
-            username: username.clone(),
-            coordinates,
-            time
-        };
+            let update_position = UpdatePosition {
+                username: username.clone(),
+                coordinates,
+                time
+            };
 
-        percorso.push(update_position);
-    }
+            percorso.push(update_position);
+        }
 
-    if percorso.is_empty() {
-        println!("Nessuna posizione trovata nel file {}", file_path);
-        return Ok(());
-    }
-
-    // --- FASE DI INVIO COORDINATE ---
-    let mut interval = tokio::time::interval(Duration::from_secs(30));
+        if percorso.is_empty() {
+            println!("Nessuna posizione trovata nel file {}", file_path);
+            return Ok(());
+        }
     
-    for upd in percorso {
-        // Aspettiamo 30 secondi (il server riceve ogni 30 secondi la posizione di ogni utente)
-        interval.tick().await; 
-        
-        send_to_server(&mut stream, &upd).await;
+    // --- split + canale condiviso ---
+        let (_read_half, mut write_half) = stream.into_split();
+        let (tx, mut rx) = mpsc::channel::<Outgoing>(32);
+
+        let writer_task = tokio::spawn(async move {
+            while let Some(pkt) = rx.recv().await {
+                match pkt {
+                    Outgoing::Chat(msg) => send_to_server(&mut write_half, &msg).await,
+                    Outgoing::Position(upd) => send_to_server(&mut write_half, &upd).await,
+                }
+            }
+        });
+
+        // task WRITER
+                
+        let username_clone = username.clone();
+        let tx_positions = tx.clone();
+        let position_task = tokio::spawn(async move {
+            let mut interval = tokio::time::interval(Duration::from_secs(30));
+            for upd in percorso {
+                interval.tick().await;
+                if tx_positions.send(Outgoing::Position(upd)).await.is_err() {
+                    break;
+                }
+            }
+            println!("\nPercorso completato per l'utente {}.", username_clone);
+        });
+        // --- MENU PRINCIPALE---
+        let action = menu::run_main_menu(&tx, &username).await;
+
+        match action {
+            menu::MenuAction::Logout => {
+                position_task.abort();
+                drop(tx);
+                let _ = writer_task.await;
+                println!("Tornando al menu iniziale...\n");
+                continue;
+            }
+        }
     }
 
-    println!("Percorso completato per l'utente {}. Client in chiusura.", username);
     Ok(())
 }
