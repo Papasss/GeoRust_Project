@@ -11,6 +11,7 @@ use tokio::time::Duration;
 use serde::Serialize;
 use std::fmt::Debug;
 use rand::Rng;
+use chrono::DateTime;
 
 mod auth_flow;
 
@@ -25,7 +26,7 @@ async fn send_to_server<T>(stream: &mut TcpStream, pacchetto: &T) where T: Seria
 }
 
 
-fn genera_percorso_random(file_path: &str) {
+fn create_random_path(file_path: &str) {
     let mut file = fs::File::create(file_path).expect("Impossibile creare il file del percorso");
     let mut rng = rand::thread_rng();
     
@@ -94,7 +95,7 @@ async fn main() -> io::Result<()> {
     if !path.exists() {
         println!("Nuovo utente '{}'. Creazione della cartella e del percorso...", username);
         fs::create_dir_all(path)?;
-        genera_percorso_random(&file_path);
+        create_random_path(&file_path);
     } else {
         println!("Utente '{}' esistente. Lettura del file esistente...", username);
     }
@@ -114,7 +115,9 @@ async fn main() -> io::Result<()> {
         }
 
         let coordinates  = Coordinates::new(values[0].clone(), values[1].clone());
-        let time = values[2].clone();
+        let time = DateTime::parse_from_rfc3339(&values[2])
+            .map(|time| time.with_timezone(&chrono::Utc))
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
         let update_position = UpdatePosition {
             username: username.clone(),
@@ -134,7 +137,7 @@ async fn main() -> io::Result<()> {
     let mut interval = tokio::time::interval(Duration::from_secs(30));
     
     for upd in percorso {
-        // Aspettiamo 30 secondi (il server riceve ogni 30 secondi la posizione di ogni utente[cite: 1])
+        // Aspettiamo 30 secondi (il server riceve ogni 30 secondi la posizione di ogni utente)
         interval.tick().await; 
         
         send_to_server(&mut stream, &upd).await;
