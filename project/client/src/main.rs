@@ -17,6 +17,7 @@ use tokio::sync::mpsc;
 
 use serde::Serialize;
 use rand::Rng;
+use chrono::DateTime;
 
 mod auth_flow;
 mod menu;
@@ -48,7 +49,7 @@ pub fn read_line_trimmed(prompt: &str) -> String {
     input.trim().to_string()
 }
 
-fn genera_percorso_random(file_path: &str) {
+fn create_random_path(file_path: &str) {
     let mut file = fs::File::create(file_path).expect("Impossibile creare il file del percorso");
     let mut rng = rand::thread_rng();
     
@@ -133,8 +134,10 @@ async fn main() -> io::Result<()> {
                 continue;
             }
 
-            let coordinates  = Coordinates::new(values[0].clone(), values[1].clone());
-            let time = values[2].clone();
+        let coordinates  = Coordinates::new(values[0].clone(), values[1].clone());
+        let time = DateTime::parse_from_rfc3339(&values[2])
+            .map(|time| time.with_timezone(&chrono::Utc))
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
 
             let update_position = UpdatePosition {
                 username: username.clone(),

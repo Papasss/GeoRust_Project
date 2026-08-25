@@ -63,6 +63,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -71,6 +72,7 @@ dependencies = [
 name = "client"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "rand",
  "rpassword",
  "serde",
@@ -400,6 +402,7 @@ dependencies = [
  "chrono",
  "cpu-time",
  "rpassword",
+ "serde",
  "serde_json",
  "sha2",
  "shared",
@@ -421,6 +424,7 @@ dependencies = [
 name = "shared"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "serde",
 ]
 

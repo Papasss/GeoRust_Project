@@ -3,9 +3,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use shared::messages::Message;
+use shared::update_position::UpdatePosition;
 use crate::server_state::ServerState;
 
 mod server_state;
+mod tracker_state;
 mod auth;
 
 
@@ -132,11 +134,16 @@ async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
     // Loop di lettura post-login: qui arriveranno posizioni e messaggi,
     // di competenza degli altri moduli del team (per ora solo placeholder)
     while let Ok(Some(line)) = reader.next_line().await {
-        let _msg: Message = match serde_json::from_str(&line) {
-            Ok(m) => m,
-            Err(_) => continue,
+        let update_position: UpdatePosition = match serde_json::from_str(&line) {
+            Ok(update_position) => update_position,
+            Err(error) => {
+                eprintln!("Invalid UpdatePosition received: {error}");
+                continue;
+            }
         };
-        // TODO (altri moduli): gestione Position / SendDirectMessage / SendBroadcastMessage
+
+        let mut st = state.lock().await;
+        st.process_packet(update_position);
     }
 
     // FASE 3 — PULIZIA A DISCONNESSIONE

@@ -5,7 +5,8 @@ use tokio::fs::OpenOptions;
 use tokio::io::AsyncWriteExt;
 use shared::messages::Message;
 use cpu_time::ProcessTime;
-
+use shared::update_position::UpdatePosition;
+use crate::tracker_state::TrackerState;
 
 
 // Rappresenta la memoria centrale del server in esecuzione.
@@ -14,7 +15,7 @@ use cpu_time::ProcessTime;
 
 pub struct ServerState {
     pub connections: HashMap<String, mpsc::Sender<Message>>,
-    pub accounts: HashMap<String, String>,
+    pub users: HashMap<String, TrackerState>,
 }
 
 impl ServerState {
@@ -24,7 +25,7 @@ impl ServerState {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
-            accounts: HashMap::new(),
+            users: HashMap::new(),
         }
     }
 
@@ -187,6 +188,16 @@ impl ServerState {
         file.write_all(log_line.as_bytes()).await?;
         file.flush().await?;
         Ok(())
+    }
+
+
+    pub fn process_packet(&mut self, packet: UpdatePosition) {
+
+        let tracker = self.users
+            .entry(packet.username.clone())
+            .or_insert_with(TrackerState::new);
+
+        tracker.update_position(&packet);
     }
 
 }

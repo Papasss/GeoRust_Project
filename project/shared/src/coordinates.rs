@@ -13,4 +13,12 @@ impl Coordinates {
         let longitude = lon_str.parse::<f32>().unwrap_or(0.0);
         Self { latitude, longitude }
     }
+
+    pub fn get_latitude(&self) -> f32 {
+        self.latitude
+    }
+
+    pub fn get_longitude(&self) -> f32 {
+        self.longitude
+    }
 }
