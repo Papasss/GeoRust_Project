@@ -115,7 +115,7 @@ async fn main() -> io::Result<()> {
         if !path.exists() {
             println!("\nCreazione della cartella e del percorso di {} ...", username);
             fs::create_dir_all(path)?;
-            genera_percorso_random(&file_path);
+            create_random_path(&file_path);
         } else {
             println!("\nUtente '{}' esistente. Lettura del file esistente...", username);
         }
