@@ -278,6 +278,60 @@ fn format_analytics_response(field: AnalyticsField, stats: &MovementStatistics) 
 }
 
 
+// Gestisce una richiesta di analytics arrivata dal client.
+// Recupera la cronologia dell'utente autenticato, la converte nel formato
+// richiesto dal modulo analytics e invoca analyze_movement.
+async fn handle_analytics_request(
+    username: &str,
+    field: AnalyticsField,
+    period: AnalyticsPeriodMessage,
+    state: &Arc<Mutex<ServerState>>,
+) -> Message {
+    let history = {
+        let server_state_lock = state.lock().await;
+
+        match server_state_lock.users.get(username) {
+            Some(tracker) => tracker.get_history().clone(),
+            None => {
+                return Message::AnalyticsErr(
+                    "Nessuna posizione disponibile per questo utente.".to_string(),
+                );
+            }
+        }
+    };
+
+    if history.is_empty() {
+        return Message::AnalyticsErr(
+            "Cronologia posizioni vuota per questo utente.".to_string(),
+        );
+    }
+
+    // Conversione da UpdatePosition a PositionSample:
+    // - Coordinates usa f32, mentre analytics lavora con f64;
+    // - DateTime<Utc> viene convertito in timestamp Unix.
+    let samples: Vec<PositionSample> = history
+        .iter()
+        .map(|update| PositionSample {
+            latitude: update.coordinates.get_latitude() as f64,
+            longitude: update.coordinates.get_longitude() as f64,
+            timestamp: update.time.timestamp() as u64,
+        })
+        .collect();
+
+    let analysis_period = convert_period(period);
+
+    let stats = analyze_movement(
+        &samples,
+        analysis_period,
+        AnalyticsConfig::default(),
+    );
+
+    let response = format_analytics_response(field, &stats);
+
+    Message::AnalyticsResponse(response)
+}
+
+
 
 // Si occupa di pulire le risorse non appena l'utente chiude l'applicazione.
 // Rimuove l'utente dal registro degli account attualmente online all'interno dello stato globale 
