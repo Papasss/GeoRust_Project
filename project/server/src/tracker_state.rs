@@ -6,29 +6,53 @@ use shared::user_state::UserState;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackerState {
-    
     last_coordinates: Option<Coordinates>,
     state: UserState,
     last_move: Option<DateTime<chrono::Utc>>,
 }
 
 impl TrackerState {
+    
+    
+    
+    // Inizializza un contenitore vuoto per il monitoraggio della geolocalizzazione.
+    // Setta l'utente inizialmente in stato di sconnessione, preparando i campi 
+    // vuoti in attesa di ricevere le primissime coordinate geografiche.
+
     pub fn new() -> Self {
         TrackerState { last_coordinates: None, state: UserState::Sconnesso, last_move: None }
     }
+
+
+
+    // Restituisce un rapido riferimento in sola lettura all'ultima posizione registrata.
 
     pub fn get_coordinates(&self) -> &Option<Coordinates> {
         &self.last_coordinates
     }
 
+
+
+    // Estrae e fornisce all'esterno l'attuale stato dinamico dell'utente.
+
     pub fn get_state(&self) -> &UserState {
         &self.state
     }
+
+
+
+    // Restituisce il puntatore temporale corrispondente al momento dell'ultimo movimento.
 
     pub fn get_last_move(&self) -> &Option<DateTime<chrono::Utc>> {
         &self.last_move
     }
 
+
+
+    // Aggiorna lo stato cinematico valutando le nuove coordinate in entrata.
+    // Confronta matematicamente latitudini e longitudini per determinare 
+    // se il veicolo si stia spostando o sia invece fermo oltre la soglia temporale massima.
+    
     pub fn update_position(&mut self, new_update: &UpdatePosition) {
         let new_coordinates = &new_update.coordinates;
         let new_time = new_update.time;

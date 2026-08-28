@@ -1,24 +1,23 @@
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, Lines};
+use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
+
 use shared::messages::Message;
+use shared::update_position::UpdatePosition;
+use shared::utils::send_packet;
 use crate::server_state::ServerState;
 
 
 
-// Eappresenta l'intero ciclo di vita di un client connesso al server.
-// Separa il canale di comunicazione in lettura e scrittura ed orchestra in 
-// sequenza le tre fasi pricipali di un client.
-
+// Rappresenta l'intero ciclo di vita di un client connesso al server.
+// Separa il socket in lettura e scrittura per evitare blocchi e orchestra in sequenza
+// autenticazione, sessione attiva e disconnessione sicura.
 pub async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
-
     let (read_half, mut write_half) = socket.into_split();
     let mut reader = BufReader::new(read_half).lines();
-
-    // Autenticazione
 
     let username = match authenticate_client(&mut reader, &mut write_half, &state).await {
         Some(name) => name,
@@ -27,34 +26,20 @@ pub async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
 
     println!("\t\t\t\tUser authenticated successfully: {username}");
 
-    // Sessione attiva
-
-    println!("\t\t\t\tSetting up user {username} active session...");
-
     let writer_task = setup_active_session(&username, write_half, &state).await;
 
-    println!("\t\t\t\t\tdone!");
-
-    process_client_messages(&mut reader).await;
-
-    // Disconnessione
+    process_client_messages(&mut reader, &state, &username).await;
 
     disconnect_client(&username, &state, writer_task).await;
 }
 
 
 
-// Gestisce l'accesso al sistema intercettando i primi messaggi inviati dal 
-// client. Elabora richieste di registrazione e login bloccando 
-// temporaneamente lo stato del server per i controlli.
-// Se un client invia un messaggio diverso prima di aver effettuato l'accesso, 
-// riceverà un errore. La funzione continua a ciclare finché l'utente non si 
-// autentica con successo o non chiude la connessione.
-
-async fn authenticate_client( reader: &mut Lines<BufReader<OwnedReadHalf>>, write_half: &mut OwnedWriteHalf, state: &Arc<Mutex<ServerState>>) -> Option<String> {
-    
+// Gestisce la prima fase di connessione filtrando le richieste non autorizzate.
+// Attende input dal client per eseguire il login o la registrazione, bloccando 
+// temporaneamente lo stato del server e rispondendo in base all'esito.
+async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write_half: &mut OwnedWriteHalf, state: &Arc<Mutex<ServerState>>) -> Option<String> {
     loop {
-
         let line = match reader.next_line().await {
             Ok(Some(line)) => line,
             _ => {
@@ -73,14 +58,14 @@ async fn authenticate_client( reader: &mut Lines<BufReader<OwnedReadHalf>>, writ
                 let mut server_state_lock = state.lock().await;
                 let response = match server_state_lock.register(&username, &password) {
                     Ok(()) => {
-                        let _ = server_state_lock.save_accounts("shared/data/accounts.json");
+                        let _ = server_state_lock.save_accounts("../shared/data/accounts.json").await;
                         Message::RegisterOk
                     }
                     Err(e) => Message::RegisterErr(e.to_string()),
                 };
                 drop(server_state_lock);
                 
-                send(&mut *write_half, &response).await;
+                let _ = send_packet(&mut *write_half, &response).await;
             }
 
             Message::Login { username, password } => {
@@ -88,7 +73,7 @@ async fn authenticate_client( reader: &mut Lines<BufReader<OwnedReadHalf>>, writ
 
                 if server_state_lock.is_online(&username) {
                     drop(server_state_lock);
-                    send(&mut *write_half, &Message::LoginErr(
+                    let _ = send_packet(&mut *write_half, &Message::LoginErr(
                         format!("Session already active for '{}'", username)
                     )).await;
                     continue;
@@ -99,17 +84,17 @@ async fn authenticate_client( reader: &mut Lines<BufReader<OwnedReadHalf>>, writ
 
                 match auth_result {
                     Ok(()) => {
-                        send(&mut *write_half, &Message::LoginOk).await;
-                        return Some(username); // Autenticazione completata
+                        let _ = send_packet(&mut *write_half, &Message::LoginOk).await;
+                        return Some(username);
                     }
                     Err(e) => {
-                        send(&mut *write_half, &Message::LoginErr(e.to_string())).await;
+                        let _ = send_packet(&mut *write_half, &Message::LoginErr(e.to_string())).await;
                     }
                 }
             }
 
             _ => {
-                send(&mut *write_half, &Message::LoginErr(
+                let _ = send_packet(&mut *write_half, &Message::LoginErr(
                     "You must log in first".to_string()
                 )).await;
             }
@@ -119,15 +104,10 @@ async fn authenticate_client( reader: &mut Lines<BufReader<OwnedReadHalf>>, writ
 
 
 
-// Inizializza le strutture necessarie per mantenere attiva la 
-// comunicazione post-login. Crea un canale mpsc in cui il server può 
-// depositare i messaggi destinati a questo utente. Avvia quindi un task 
-// asincrono dedicato in background che, non appena vede arrivare un messaggio 
-// in questo canale, lo spedisce al socket del client tramite la sua parte di 
-// scrittura.
-
+// Inizializza il canale asincrono per mantenere aperta la comunicazione in uscita.
+// Avvia un task in background che attende passivamente i messaggi inseriti nel canale
+// e li recapita al client inviandoli fisicamente sul socket TCP.
 async fn setup_active_session(username: &str, mut write_half: OwnedWriteHalf, state: &Arc<Mutex<ServerState>>) -> JoinHandle<()> {
-
     let (tx, mut rx) = mpsc::channel::<Message>(32);
 
     {
@@ -137,39 +117,55 @@ async fn setup_active_session(username: &str, mut write_half: OwnedWriteHalf, st
 
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
-            send(&mut write_half, &msg).await;
+            let _ = send_packet(&mut write_half, &msg).await;
         }
     })
 }
 
 
 
-// Mantiene aperto il canale di ascolto per tutta la durata della sessione.
-// Legge riga per riga i comandi in entrata (come aggiornamenti di posizione o messaggi in chat),
-// li converte in strutture dati Rust (Message) e li smista per l'elaborazione.
-// Il loop si interrompe solo in caso di disconnessione o errore del client.
-
-async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>) {
-
-    
+// Mantiene aperto il canale di ascolto smistando i comandi e le posizioni del client.
+// Tenta un doppio parsing del JSON per far convivere la messaggistica e le coordinate,
+// indirizzando correttamente i pacchetti verso le rispettive logiche del server.
+async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, state: &Arc<Mutex<ServerState>>, username: &str) {
     while let Ok(Some(line)) = reader.next_line().await {
-        let _msg: Message = match serde_json::from_str(&line) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
+        
+        if let Ok(msg) = serde_json::from_str::<Message>(&line) {
+            match msg {
+                Message::SendDirectMessage { to, text } => {
+                    let server_state_lock = state.lock().await;
+                    let _ = server_state_lock.direct_message(
+                        &to, 
+                        Message::IncomingDirectMessage { from: username.to_string(), text }
+                    ).await;
+                }
+                Message::SendBroadcastMessage { text } => {
+                    let server_state_lock = state.lock().await;
+                    server_state_lock.broadcast(
+                        Message::IncomingBroadcastMessage { from: username.to_string(), text }
+                    ).await;
+                }
+                _ => {}
+            }
+            continue;
+        }
 
-        // TODO: Position / MessaggiDiretti / MessaggiBroadcast
+        if let Ok(update_position) = serde_json::from_str::<UpdatePosition>(&line) {
+            let mut server_state_lock = state.lock().await;
+            server_state_lock.process_packet(update_position);
+            continue;
+        }
+
+        eprintln!("Unknown packet received from {}: {}", username, line);
     }
 }
 
 
 
-// Si occupa di pulire le risorse non appena l'utente chiude l'applicazione.
-// Rimuove l'utente dal registro degli account attualmente online all'interno dello stato globale 
-// e interrompe forzatamente il task dedicato alla scrittura dei messaggi, liberando così la memoria.
-
+// Rimuove la sessione dell'utente dallo stato e interrompe il flusso in uscita.
+// Spegne definitivamente il task dedicato alla scrittura, liberando
+// la memoria non appena l'utente chiude volontariamente la connessione.
 async fn disconnect_client(username: &str, state: &Arc<Mutex<ServerState>>, writer_task: JoinHandle<()>) {
-
     let mut server_state_lock = state.lock().await;
     server_state_lock.logout(username);
     drop(server_state_lock);
@@ -177,16 +173,4 @@ async fn disconnect_client(username: &str, state: &Arc<Mutex<ServerState>>, writ
     writer_task.abort();
 
     println!("\t\t\t\tUser disconnected: {username}");
-}
-
-
-
-// Formatta un pacchetto dati per la spedizione sulla rete. Prende la struttura
-// dati Message, la converte in una stringa di testo in formato JSON e vi 
-// aggiunge il carattere di a capo finale necessario affinché il ricevente 
-// capisca che il messaggio è concluso.
-
-async fn send(writer: &mut (impl AsyncWriteExt + Unpin), msg: &Message) {
-    let json = serde_json::to_string(msg).unwrap();
-    let _ = writer.write_all(format!("{json}\n").as_bytes()).await;
 }

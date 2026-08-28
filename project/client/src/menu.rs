@@ -1,56 +1,72 @@
-use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-
 use shared::messages::Message;
 
-use crate::send_to_server;
-use crate::read_line_trimmed; 
-use crate::Outgoing;
+use crate::utils::read_line_trimmed; 
+use crate::utils::Outgoing;
 
 pub enum MenuAction {
     Logout,
 }
 
 
-/// Menu principale post-login. Ritorna l'azione scelta dall'utente,
-/// così il chiamante (main) decide cosa fare (tornare al login o uscire).
+
+// Mostra le opzioni disponibili all'utente loggato e smista le relative azioni.
+// Legge la scelta da terminale, simula le elaborazioni sul tragitto o intercetta
+// l'invio di messaggi diretti e broadcast incanalandoli verso il task del server.
 pub async fn run_main_menu(tx: &mpsc::Sender<Outgoing>, username: &str) -> MenuAction {
-    println!("\n=== Benvenuto, {username}! ===");
+    println!("\n=== Welcome, {username}! ===");
 
     loop {
         println!("\n--- Menu ---");
-        println!("1) Tragitto percorso");
-        println!("2) Velocità media");
-        println!("3) Durata movimento");
-        println!("4) Durata pausa");
-        println!("5) Invia messaggio");
+        println!("1) Route info");
+        println!("2) Average speed");
+        println!("3) Movement duration");
+        println!("4) Pause duration");
+        println!("5) Send message");
         println!("6) Logout");
-        let scelta = read_line_trimmed("Seleziona l'azione: ");
+        
+        let choice = read_line_trimmed("Select an action: ");
 
-        match scelta.as_str() {
-            "1" => {
-                println!("Calcolo informazioni sul tragitto percorso..,");
-            }
-            "2" => {
-                println!("Calcolo velocità media...");
-            }
-            "3" => {
-                println!("Calcolo durata complessiva del movimento...");
-            }
-            "4" => {
-                println!("Calcolo durata delle pause...");
-            }
+        match choice.as_str() {
+            "1" => println!("Calculating route information..."),
+            "2" => println!("Calculating average speed..."),
+            "3" => println!("Calculating total movement duration..."),
+            "4" => println!("Calculating pause duration..."),
             "5" => {
-                let testo = read_line_trimmed("Testo: ");
-                if tx.send(Outgoing::Chat(Message::Text(testo))).await.is_err() {
-                    eprintln!("Impossibile inviare il messaggio: connessione con il server interrotta.");
+                println!("\nMessage type:");
+                println!("1) Direct");
+                println!("2) Broadcast");
+                println!("3) Back");
+
+                let msg_type = read_line_trimmed("Select an option: ");
+
+                match msg_type.as_str() {
+                    "1" => {
+                        let recipient = read_line_trimmed("Recipient username: ");
+                        let text = read_line_trimmed("Message text: ");
+                        
+                        let msg = Message::SendDirectMessage { to: recipient, text };
+                        if tx.send(Outgoing::Chat(msg)).await.is_err() {
+                            eprintln!("Error: connection with writer task lost.");
+                        }
+                    }
+                    "2" => {
+                        let text = read_line_trimmed("Broadcast message text: ");
+                        
+                        let msg = Message::SendBroadcastMessage { text };
+                        if tx.send(Outgoing::Chat(msg)).await.is_err() {
+                            eprintln!("Error: connection with writer task lost.");
+                        }
+                    }
+                    "3" => continue,
+                    _ => println!("Invalid option, returning to main menu."),
                 }
             }
             "6" => {
-                println!("Logout in corso...");
+                println!("Logging out...");
                 return MenuAction::Logout;
             }
-            _ => println!("Scelta non valida, riprova."),
+            _ => println!("Invalid choice, please try again."),
         }
     }
 }

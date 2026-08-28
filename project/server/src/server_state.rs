@@ -8,32 +8,32 @@ use cpu_time::ProcessTime;
 use shared::update_position::UpdatePosition;
 use crate::tracker_state::TrackerState;
 
-
-// Rappresenta la memoria centrale del server in esecuzione.
-// Contiene un registro delle connessioni attive e una mappa con le 
-// informazioni e credenziali degli account registrati.
-
 pub struct ServerState {
     pub connections: HashMap<String, mpsc::Sender<Message>>,
+    pub accounts: HashMap<String, String>, 
     pub users: HashMap<String, TrackerState>,
 }
 
 impl ServerState {
     
-    // Crea una nuova istanza vuota dello stato del server.
+    
+    
+    // Istanzia il registro principale del server svuotando le mappe.
+    // Prepara la memoria che ospiterà le credenziali account persistenti, 
+    // gli stati utente logici e i canali di comunicazione per i client online.
 
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
+            accounts: HashMap::new(),
             users: HashMap::new(),
         }
     }
 
 
 
-    // Registra un utente come "online" all'interno del server.
-    // Associa lo username dell'utente al canale di comunicazione appena creato,
-    // permettendo così al server di recapitargli i messaggi.
+    // Attiva lo stato online inserendo il client appena loggato nella mappa.
+    // Associa lo username al relativo canale di comunicazione (Sender) asincrono.
 
     pub fn login(&mut self, username: &str, sender: mpsc::Sender<Message>) {
         self.connections.insert(username.to_string(), sender);
@@ -41,8 +41,9 @@ impl ServerState {
 
 
 
-    // Gestisce la disconnessione di un utente.
-    // Rimuove la sua voce dalla mappa delle connessioni attive.
+    // Rimuove i dati di rete attivi scollegando formalmente il client.
+    // Elimina il riferimento al canale del mittente scongiurando l'invio
+    // di dati a un terminale ormai inattivo.
 
     pub fn logout(&mut self, username: &str) {
         self.connections.remove(username);
@@ -50,54 +51,45 @@ impl ServerState {
 
 
 
-    // Verifica rapidamente se un determinato utente è attualmente connesso.
+    // Controlla rapidamente all'interno della mappa delle chiavi di connessione
+    // se lo specifico utente è segnato come correntemente online nel sistema.
 
     pub fn is_online(&self, username: &str) -> bool {
-        self.connections.contains_key(username)
+        self.connections.contains_key(username) 
     }
 
 
 
-    // Tenta di recapitare un messaggio a uno specifico utente connesso.
-    // Se l'utente si trova nel registro, utilizza il suo canale per inviargli 
-    // il messaggio.
-    // In caso di successo o errore stampa un errore a terminale.
+    // Smista un messaggio mirato sfruttando il canale TCP del destinatario indicato.
+    // Inoltra il pacchetto in modo asincrono unicamente se rileva una sessione online,
+    // restituendo dettagliatamente l'errore in caso di indirizzo introvabile o chiuso.
 
     pub async fn direct_message(&self, receiver: &str, msg: Message) -> Result<(), String> {
-
+        
         if let Some(tx) = self.connections.get(receiver) {
-
             let res = tx.send(msg).await.map_err(|mex| mex.to_string());
-
             match res {
                 Ok(_) => { 
-
                     println!("Messagge succesfully sended to:\t{receiver}");
                     Ok(())
-
                 },
-
                 Err(error) => {
-
                     println!("User '{receiver}' not connected:\tERROR: {error}");
                     Err(format!("Unable to reach'{receiver}'"))
                 }
             }
-
-
         } else {
-
             Err(format!("User '{}' not connected", receiver))
-
         }
     }
 
 
 
-    // Invia lo stesso identico messaggio a tutti gli utenti attualmente online.
+    // Diffonde una copia del medesimo pacchetto a tutta l'utenza online attiva.
+    // Cicla attraverso l'elenco delle connessioni riutilizzando la logica di
+    // invio diretto e scartando passivamente eventuali errori derivati da drop.
 
     pub async fn broadcast(&self, msg: Message) {
-
         for user in self.connections.keys() {
             let _ = self.direct_message(user, msg.clone()).await;
         }
@@ -105,80 +97,66 @@ impl ServerState {
 
 
 
-    // Avvia un task in background dedicato al monitoraggio delle prestazioni.
-    // Utilizza un timer per svegliarsi ogni due minuti e registrare il tempo di CPU 
-    // consumato dall'applicazione.
+    // Genera un thread in background che monitora periodicamente le performance.
+    // Esegue una scansione dello stato hardware ogni due minuti esatti calcolando
+    // e registrando su log il tempo di CPU consumato.
 
     pub async fn start_log_cpu_usage() {
-
         let mut timer = interval(Duration::from_secs(120));
-
         tokio::spawn(async move {
             loop {
-                
                 timer.tick().await;
                 let cpu_duration = Self::get_cpu_time();
 
-                if  cpu_duration.is_some() {
-
+                if cpu_duration.is_some() {
                     let err =  Self::write_cpu_usage(cpu_duration.unwrap()).await;
-
                     if err.is_err() {
                         eprintln!("[CPU_USAGE] Error while writing logs:\t{}", err.unwrap_err());
                     }
                 }
             }
         });
-
     }
 
 
 
-    // Interroga direttamente il sistema operativo restituendo quanto tempo di 
-    // CPU è stato effettivamente utilizzato dal processo del server da quando 
-    // è stato avviato fino a questo preciso istante.
+    // Legge nativamente le statistiche del sistema operativo host recuperando
+    // specificamente la durata del processo impiegata sul processore fisico.
 
     fn get_cpu_time() -> Option<Duration> {
-
         let cpu_now = ProcessTime::now();
         Some(cpu_now.as_duration())
-
     }
 
 
 
-    // Definisce il percorso dei log a seconda del sistema opeativo
+    // Seleziona selettivamente il percorso della directory appoggiandosi alla compilazione.
+    // Lascia che Cargo determini l'OS target escludendo il codice ridondante in fase di build.
 
     #[cfg(target_os = "windows")]
     fn get_log_dir() -> &'static str {
         "server/logs/windows"
     }
-
     #[cfg(target_os = "macos")]
     fn get_log_dir() -> &'static str {
         "server/logs/macos"
     }
-
     #[cfg(target_os = "linux")]
     fn get_log_dir() -> &'static str {
         "server/logs/linux"
     }
-
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     fn get_log_dir() -> &'static str {
         "server/logs/other"
     }
 
 
-    // Si occupa materialmente di formattare e scrivere i log sul disco.
-    // Assicura che la cartella dei log esista, apre o crea il file di testo, 
-    // e vi aggiunge una nuova riga contenente la data, l'ora e i secondi di 
-    // CPU consumati.
-    
-    async fn write_cpu_usage(cpu_time: Duration) -> Result<(), std::io::Error> {
-        
-        let path = Self::get_log_dir();
 
+    // Scrive materialmente l'utilizzo della CPU sul disco generando prima la cartella necessaria.
+    // Effettua l'append su un file testuale arricchendo i valori coi timestamp temporali
+    // senza ostacolare le operazioni asincrone primarie.
+    async fn write_cpu_usage(cpu_time: Duration) -> Result<(), std::io::Error> {
+        let path = Self::get_log_dir();
         tokio::fs::create_dir_all(path).await?;
 
         let mut file = OpenOptions::new().create(true).append(true).open(format!("{path}/cpu_performance.log")).await?;
@@ -191,13 +169,16 @@ impl ServerState {
     }
 
 
-    pub fn process_packet(&mut self, packet: UpdatePosition) {
 
+    // Smista un nuovo pacchetto di aggiornamento coordinate inviato via socket.
+    // Richiama il modulo di tracciamento o ne instanzia uno nuovo a seconda se
+    // l'utente sia già associato a uno stato tracker pregresso in memoria.
+    
+    pub fn process_packet(&mut self, packet: UpdatePosition) {
         let tracker = self.users
             .entry(packet.username.clone())
             .or_insert_with(TrackerState::new);
 
         tracker.update_position(&packet);
     }
-
 }
