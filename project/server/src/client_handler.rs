@@ -4,11 +4,20 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
-use shared::messages::Message;
+use shared::messages::{AnalyticsField, AnalyticsPeriodMessage, Message};
 // Il client invia le posizioni come UpdatePosition, non come Message.
 // Per questo il server deve riuscire a deserializzare anche questo tipo.
 use shared::update_position::UpdatePosition;
 use crate::server_state::ServerState;
+// Modulo analytics: contiene la funzione sviluppata per calcolare
+// tragitto, distanza, velocità media, durata movimento e pause.
+use crate::analytics::{
+    analyze_movement,
+    AnalysisPeriod,
+    AnalyticsConfig,
+    MovementStatistics,
+    PositionSample,
+};
 
 
 
@@ -190,6 +199,81 @@ async fn process_client_messages(
 
         // Se il pacchetto non è né Message né UpdatePosition, lo segnaliamo.
         eprintln!("[{username}] Pacchetto non riconosciuto: {line}");
+    }
+}
+
+
+// Converte il periodo ricevuto dal client nel tipo usato dal modulo analytics.
+// In questo modo il protocollo client/server resta separato dalla logica di calcolo.
+fn convert_period(period: AnalyticsPeriodMessage) -> AnalysisPeriod {
+    match period {
+        AnalyticsPeriodMessage::CurrentDay => AnalysisPeriod::CurrentDay,
+        AnalyticsPeriodMessage::CurrentWeek => AnalysisPeriod::CurrentWeek,
+        AnalyticsPeriodMessage::CurrentMonth => AnalysisPeriod::CurrentMonth,
+        AnalyticsPeriodMessage::Custom {
+            start_timestamp,
+            end_timestamp,
+        } => AnalysisPeriod::Custom {
+            start_timestamp,
+            end_timestamp,
+        },
+    }
+}
+
+// Trasforma le statistiche calcolate in una risposta testuale leggibile dal client.
+// Il campo richiesto dal menu determina quale informazione viene restituita.
+fn format_analytics_response(field: AnalyticsField, stats: &MovementStatistics) -> String {
+    match field {
+        AnalyticsField::Path => {
+            let path = stats
+                .path
+                .iter()
+                .map(|sample| format!("({:.5}, {:.5})", sample.latitude, sample.longitude))
+                .collect::<Vec<String>>()
+                .join(" -> ");
+
+            format!("Tragitto percorso:\n{}", path)
+        }
+
+        AnalyticsField::TotalDistance => {
+            format!("Distanza totale percorsa: {:.3} km", stats.total_distance_km)
+        }
+
+        AnalyticsField::AverageSpeed => {
+            format!("Velocità media: {:.3} km/h", stats.average_speed_kmh)
+        }
+
+        AnalyticsField::MovementDuration => {
+            format!(
+                "Durata complessiva del movimento: {} secondi",
+                stats.movement_duration.as_secs()
+            )
+        }
+
+        AnalyticsField::PauseDuration => {
+            format!(
+                "Durata complessiva delle pause: {} secondi",
+                stats.pause_duration.as_secs()
+            )
+        }
+
+        AnalyticsField::All => {
+            let path = stats
+                .path
+                .iter()
+                .map(|sample| format!("({:.5}, {:.5})", sample.latitude, sample.longitude))
+                .collect::<Vec<String>>()
+                .join(" -> ");
+
+            format!(
+                "Tragitto percorso:\n{}\n\nDistanza totale: {:.3} km\nVelocità media: {:.3} km/h\nDurata movimento: {} secondi\nDurata pause: {} secondi",
+                path,
+                stats.total_distance_km,
+                stats.average_speed_kmh,
+                stats.movement_duration.as_secs(),
+                stats.pause_duration.as_secs()
+            )
+        }
     }
 }
 
