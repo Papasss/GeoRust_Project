@@ -1,15 +1,13 @@
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, Mutex};
-use shared::messages::Message;
-use shared::update_position::UpdatePosition;
+use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 use crate::server_state::ServerState;
 
 mod server_state;
 mod tracker_state;
 mod auth;
 mod analytics;
+mod client_handler;
 
 #[tokio::main]
 async fn main() {
@@ -35,12 +33,15 @@ async fn main() {
 
         let state = Arc::clone(&state); // clona solo il puntatore, non i dati
 
-        tokio::spawn(async move { //lancia un task asincrono insipendente
-            handle_client(socket, state).await;
+        tokio::spawn(async move { //lancia un task asincrono indipendente
+            // La gestione completa del client è delegata al modulo client_handler,
+            // che contiene anche la logica post-login per posizioni e analytics.
+            client_handler::handle_client(socket, state).await;
         });
     }
 }
 
+/*
 async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
     // Divide il socket in due metà indipendenti: una per leggere, una per scrivere
     let (read_half, mut write_half) = socket.into_split(); //permette di leggeree scrivere da due punti diversi del codice
@@ -162,3 +163,4 @@ async fn send(writer: &mut (impl AsyncWriteExt + Unpin), msg: &Message) {
     let json = serde_json::to_string(msg).unwrap();
     let _ = writer.write_all(format!("{json}\n").as_bytes()).await;
 }
+*/
