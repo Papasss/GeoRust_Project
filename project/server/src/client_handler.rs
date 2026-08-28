@@ -333,6 +333,26 @@ async fn handle_analytics_request(
 
 
 
+// Invia un messaggio al client autenticato usando il canale salvato in ServerState.
+// Cloniamo il sender fuori dal lock per evitare di tenere bloccato lo stato globale
+// mentre facciamo l'await dell'invio.
+async fn send_to_logged_user(
+    username: &str,
+    msg: Message,
+    state: &Arc<Mutex<ServerState>>,
+) {
+    let tx = {
+        let server_state_lock = state.lock().await;
+        server_state_lock.connections.get(username).cloned()
+    };
+
+    if let Some(tx) = tx {
+        let _ = tx.send(msg).await;
+    }
+}
+
+
+
 // Si occupa di pulire le risorse non appena l'utente chiude l'applicazione.
 // Rimuove l'utente dal registro degli account attualmente online all'interno dello stato globale 
 // e interrompe forzatamente il task dedicato alla scrittura dei messaggi, liberando così la memoria.
