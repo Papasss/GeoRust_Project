@@ -1,61 +1,54 @@
-use std::io::{self, Write, BufRead};
-use std::net::TcpStream;
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::net::TcpStream;
+
 use shared::messages::Message;
 
-/// Legge una riga da terminale, con un prompt, e la ripulisce
-fn read_line_trimmed(prompt: &str) -> String {
-    print!("{prompt}");
-    io::stdout().flush().unwrap();
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).expect("Failed to read input");
-    input.trim().to_string()
-}
+use crate::send_to_server; 
+use crate::read_line_trimmed;
+
 //non visualizzare la password
 fn read_password(prompt: &str) -> String {
-    rpassword::prompt_password(prompt).expect("Failed to read password")
-}
-/// Serializza un Message in JSON e lo scrive sul socket, seguito da \n
-fn send_request(stream: &mut TcpStream, msg: &Message) {
-    let json = serde_json::to_string(msg).unwrap();
-    writeln!(stream, "{}", json).expect("Failed to send message to server");
+    rpassword::prompt_password(prompt).expect("Errore durante la lettura della password")
 }
 
+
 /// Legge una riga dal socket e la deserializza in un Message
-fn read_response(reader: &mut impl BufRead) -> Option<Message> {
+async fn read_response(stream: &mut TcpStream) -> Option<Message> {
+    let mut reader = BufReader::new(stream);
     let mut line = String::new();
-    if reader.read_line(&mut line).unwrap_or(0) == 0 {
-        return None; // il server ha chiuso la connessione
+    match reader.read_line(&mut line).await {
+        Ok(0) | Err(_) => None, // connessione chiusa o errore
+        Ok(_) => serde_json::from_str(line.trim()).ok(),
     }
-    serde_json::from_str(line.trim()).ok()
 }
 
 /// Gestisce l'intero ciclo di registrazione/login.
 /// Ritorna lo username autenticato quando il login ha successo.
-pub fn run_auth_flow(stream: &mut TcpStream, reader: &mut impl BufRead) -> String {
+pub async fn run_auth_flow(stream: &mut TcpStream) -> String {
     loop {
         println!("\n=== GEORUGGINE ===");
-        println!("1) Register");
+        println!("1) Registrazione");
         println!("2) Login");
         println!("3) Exit");
-        let scelta = read_line_trimmed("Select option: ");
+        let scelta = read_line_trimmed("Seleziona l'opzione: ");
 
         match scelta.as_str() {
             "1" => {
                 let username = read_line_trimmed("Username: ");
                 let password = read_password("Password: ");
 
-                send_request(stream, &Message::Register { username, password });
+                send_to_server(stream, &Message::Register { username, password }).await;
 
-                match read_response(reader) {
+                match read_response(stream).await {
                     Some(Message::RegisterOk) => {
-                        println!("Registration successful! You can now log in.");
+                        println!("Registrazione completata con successo! Ora puoi effettuare il login.");
                     }
                     Some(Message::RegisterErr(msg)) => {
-                        println!("Registration failed: {}", msg);
+                        println!("Registrazione fallita: {}", msg);
                     }
-                    Some(_) => println!("Unexpected response from server."),
+                    Some(_) => println!("Risposta inattesa dal server."),
                     None => {
-                        eprintln!("Connection lost with server.");
+                        eprintln!("Connessione persa con il server.");
                         std::process::exit(1);
                     }
                 }
@@ -64,19 +57,19 @@ pub fn run_auth_flow(stream: &mut TcpStream, reader: &mut impl BufRead) -> Strin
                 let username = read_line_trimmed("Username: ");
                 let password = read_password("Password: ");
 
-                send_request(stream, &Message::Login { username: username.clone(), password });
+                send_to_server(stream, &Message::Login { username: username.clone(), password }).await;
 
-                match read_response(reader) {
+                match read_response(stream).await {
                     Some(Message::LoginOk) => {
-                        println!("Login successful! Welcome, {}.", username);
+                        println!("Login eseguito con successo! Benvenuto, {}.", username);
                         return username; // auth completata, usciamo dal loop
                     }
                     Some(Message::LoginErr(msg)) => {
-                        println!("Login failed: {}", msg);
+                        println!("Login fallito: {}", msg);
                     }
-                    Some(_) => println!("Unexpected response from server."),
+                    Some(_) => println!("Risposta inattesa dal server."),
                     None => {
-                        eprintln!("Connection lost with server.");
+                        eprintln!("Connessione persa con il server.");
                         std::process::exit(1);
                     }
                 }
@@ -85,7 +78,7 @@ pub fn run_auth_flow(stream: &mut TcpStream, reader: &mut impl BufRead) -> Strin
                 println!("Exit...");
                 std::process::exit(0);
             }
-            _ => println!("Invalid option, please try again."),
+            _ => println!("Opzione non valida, riprova."),
         }
     }
 }

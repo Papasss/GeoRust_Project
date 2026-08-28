@@ -1,8 +1,9 @@
 //AUTENTICAZIONE E REGISTRAZIONE
-use crate::serverState::ServerState;
+use crate::server_state::ServerState;
 use std::collections::HashMap;
 use std::fs;
-
+use shared::read_file;
+use std::io::{BufReader, ErrorKind};
 #[derive(Debug)]
 pub enum AuthError {
     UsernameTaken,
@@ -13,9 +14,9 @@ pub enum AuthError {
 impl std::fmt::Display for AuthError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AuthError::UsernameTaken => write!(f, "Username is already taken"),
-            AuthError::UserNotFound => write!(f, "User not found"),
-            AuthError::WrongPassword => write!(f, "Incorrect password"),
+            AuthError::UsernameTaken => write!(f, "Nome utente già in uso"),
+            AuthError::UserNotFound => write!(f, "Utente non trovato"),
+            AuthError::WrongPassword => write!(f, "Password errata"),
         }
     }
 }
@@ -32,23 +33,24 @@ impl ServerState {
     /// Carica gli account da file, se esiste. Se il file non c'è
     /// (prima esecuzione), non è un errore: si parte con zero account.
     pub fn load_accounts(&mut self, path: &str) {
-        match fs::read_to_string(path) {
-            Ok(content) => {
-                match serde_json::from_str::<HashMap<String, String>>(&content) {
+        match read_file(path) {
+            Ok(file) => {
+                let reader = BufReader::new(file);
+                match serde_json::from_reader::<_, HashMap<String, String>>(reader) {
                     Ok(accounts) => {
-                        self.accounts= accounts;
-                        println!("Loaded {} accounts from {}", self.accounts.len(), path);
+                        self.accounts = accounts;
+                        println!("Caricati {} account dal file {}", self.accounts.len(), path);
                     }
                     Err(e) => {
-                        eprintln!("Accounts file corrupted or malformed: {}", e);
+                        eprintln!("File degli account corrotto o non valido: {}", e);
                     }
                 }
             }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                println!("No existing accounts file found, starting empty.");
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                println!("Nessun file account esistente trovato, avvio con archivio vuoto.");
             }
             Err(e) => {
-                eprintln!("Error reading accounts file: {}", e);
+                eprintln!("Errore durante la lettura del file degli account: {}", e);
             }
         }
     }

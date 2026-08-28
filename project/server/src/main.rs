@@ -3,9 +3,11 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{mpsc, Mutex};
 use shared::messages::Message;
-use crate::serverState::ServerState;
+use shared::update_position::UpdatePosition;
+use crate::server_state::ServerState;
 
-mod serverState;
+mod server_state;
+mod tracker_state;
 mod auth;
 mod analytics;
 
@@ -16,7 +18,7 @@ async fn main() {
     // Stato condiviso: un solo ServerState, protetto da un solo Mutex,
     // accessibile da tutti i task client tramite Arc (possesso condiviso)
     let mut inizial_state= ServerState::new();
-    let accounts_path= "../shared/data/accounts.json";
+    let accounts_path= "../data/accounts.json";
     inizial_state.load_accounts(accounts_path);
     let state = Arc::new(Mutex::new(inizial_state));
 
@@ -132,11 +134,16 @@ async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
     // Loop di lettura post-login: qui arriveranno posizioni e messaggi,
     // di competenza degli altri moduli del team (per ora solo placeholder)
     while let Ok(Some(line)) = reader.next_line().await {
-        let _msg: Message = match serde_json::from_str(&line) {
-            Ok(m) => m,
-            Err(_) => continue,
+        let update_position: UpdatePosition = match serde_json::from_str(&line) {
+            Ok(update_position) => update_position,
+            Err(error) => {
+                eprintln!("Invalid UpdatePosition received: {error}");
+                continue;
+            }
         };
-        // TODO (altri moduli): gestione Position / SendDirectMessage / SendBroadcastMessage
+
+        let mut st = state.lock().await;
+        st.process_packet(update_position);
     }
 
     // FASE 3 — PULIZIA A DISCONNESSIONE
