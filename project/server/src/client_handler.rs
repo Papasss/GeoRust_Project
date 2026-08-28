@@ -35,7 +35,9 @@ pub async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
 
     println!("\t\t\t\t\tdone!");
 
-    process_client_messages(&mut reader).await;
+    // Passiamo anche username e stato globale:
+    // serviranno nella fase post-login per associare i pacchetti all'utente corretto.
+process_client_messages(&username, &mut reader, &state).await;
 
     // Disconnessione
 
@@ -149,8 +151,16 @@ async fn setup_active_session(username: &str, mut write_half: OwnedWriteHalf, st
 // li converte in strutture dati Rust (Message) e li smista per l'elaborazione.
 // Il loop si interrompe solo in caso di disconnessione o errore del client.
 
-async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>) {
-
+async fn process_client_messages(
+    username: &str,
+    reader: &mut Lines<BufReader<OwnedReadHalf>>,
+    state: &Arc<Mutex<ServerState>>,
+) {
+        // Questi riferimenti verranno usati nei prossimi step:
+    // - username identifica il client autenticato;
+    // - state permette di aggiornare ServerState con posizioni e richieste analytics.
+    let _ = username;
+    let _ = state;
     
     while let Ok(Some(line)) = reader.next_line().await {
         let _msg: Message = match serde_json::from_str(&line) {
