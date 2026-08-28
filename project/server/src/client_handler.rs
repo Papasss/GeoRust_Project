@@ -172,16 +172,24 @@ async fn process_client_messages(
         // Prima proviamo a interpretare la riga come Message.
         // Questa categoria comprende chat, richieste analytics, login/logout, ecc.
         if let Ok(msg) = serde_json::from_str::<Message>(&line) {
-            match msg {
-                Message::Text(text) => {
-                    println!("[{username}] Messaggio ricevuto: {text}");
-                }
+           match msg {
+    Message::AnalyticsRequest { field, period } => {
+        // Il client ha richiesto una statistica sul proprio movimento.
+        // Il server recupera la cronologia dell'utente autenticato,
+        // chiama il modulo analytics e risponde con un Message::AnalyticsResponse.
+        let response = handle_analytics_request(username, field, period, state).await;
 
-                // Le richieste analytics saranno gestite nello step successivo.
-                _ => {
-                    println!("[{username}] Messaggio non ancora gestito: {:?}", msg);
-                }
-            }
+        send_to_logged_user(username, response, state).await;
+    }
+
+    Message::Text(text) => {
+        println!("[{username}] Messaggio ricevuto: {text}");
+    }
+
+    _ => {
+        println!("[{username}] Messaggio non ancora gestito: {:?}", msg);
+    }
+}
 
             continue;
         }
