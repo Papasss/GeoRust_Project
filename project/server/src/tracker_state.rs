@@ -10,11 +10,17 @@ pub struct TrackerState {
     last_coordinates: Option<Coordinates>,
     state: UserState,
     last_move: Option<DateTime<chrono::Utc>>,
+    history: Vec<UpdatePosition>,
 }
 
 impl TrackerState {
     pub fn new() -> Self {
-        TrackerState { last_coordinates: None, state: UserState::Sconnesso, last_move: None }
+        TrackerState {
+            last_coordinates: None,
+            state: UserState::Sconnesso,
+            last_move: None,
+            history: Vec::new(),
+        }
     }
 
     pub fn get_coordinates(&self) -> &Option<Coordinates> {
@@ -29,9 +35,15 @@ impl TrackerState {
         &self.last_move
     }
 
+    // Ho aggiunto
+    pub fn get_history(&self) -> &Vec<UpdatePosition> {
+    &self.history
+}
+
     pub fn update_position(&mut self, new_update: &UpdatePosition) {
         let new_coordinates = &new_update.coordinates;
         let new_time = new_update.time;
+        self.history.push(new_update.clone());  //aggiunto
 
         match &self.last_coordinates {
             None => {
