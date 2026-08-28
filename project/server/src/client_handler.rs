@@ -5,6 +5,9 @@ use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use shared::messages::Message;
+// Il client invia le posizioni come UpdatePosition, non come Message.
+// Per questo il server deve riuscire a deserializzare anche questo tipo.
+use shared::update_position::UpdatePosition;
 use crate::server_state::ServerState;
 
 
@@ -156,19 +159,37 @@ async fn process_client_messages(
     reader: &mut Lines<BufReader<OwnedReadHalf>>,
     state: &Arc<Mutex<ServerState>>,
 ) {
-        // Questi riferimenti verranno usati nei prossimi step:
-    // - username identifica il client autenticato;
-    // - state permette di aggiornare ServerState con posizioni e richieste analytics.
-    let _ = username;
-    let _ = state;
-    
     while let Ok(Some(line)) = reader.next_line().await {
-        let _msg: Message = match serde_json::from_str(&line) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
+        // Prima proviamo a interpretare la riga come Message.
+        // Questa categoria comprende chat, richieste analytics, login/logout, ecc.
+        if let Ok(msg) = serde_json::from_str::<Message>(&line) {
+            match msg {
+                Message::Text(text) => {
+                    println!("[{username}] Messaggio ricevuto: {text}");
+                }
 
-        // TODO: Position / MessaggiDiretti / MessaggiBroadcast
+                // Le richieste analytics saranno gestite nello step successivo.
+                _ => {
+                    println!("[{username}] Messaggio non ancora gestito: {:?}", msg);
+                }
+            }
+
+            continue;
+        }
+
+        // Se non è un Message, proviamo a interpretarlo come UpdatePosition.
+        // Il client invia così gli aggiornamenti di posizione letti dal file percorso.txt.
+        if let Ok(update_position) = serde_json::from_str::<UpdatePosition>(&line) {
+            let mut server_state_lock = state.lock().await;
+
+            // Aggiorna lo stato dell'utente e salva la posizione nella history del TrackerState.
+            server_state_lock.process_packet(update_position);
+
+            continue;
+        }
+
+        // Se il pacchetto non è né Message né UpdatePosition, lo segnaliamo.
+        eprintln!("[{username}] Pacchetto non riconosciuto: {line}");
     }
 }
 
