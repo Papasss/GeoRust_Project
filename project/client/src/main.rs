@@ -12,6 +12,9 @@ use std::fmt::Debug;
 use tokio::net::TcpStream;
 use tokio::io::AsyncWriteExt;
 use tokio::io::AsyncWrite;
+// Serve per leggere in modo asincrono le risposte inviate dal server
+// durante la sessione post-login.
+use tokio::io::{AsyncBufReadExt, BufReader as TokioBufReader};
 use tokio::time::Duration;
 use tokio::sync::mpsc;
 
@@ -153,9 +156,38 @@ async fn main() -> io::Result<()> {
             return Ok(());
         }
     
-    // --- split + canale condiviso ---
-        let (_read_half, mut write_half) = stream.into_split();
+        // --- split + canale condiviso ---
+        let (read_half, mut write_half) = stream.into_split();
         let (tx, mut rx) = mpsc::channel::<Outgoing>(32);
+
+        // Task READER:
+        // resta in ascolto delle risposte del server, ad esempio AnalyticsResponse.
+        // Senza questo task il client invierebbe richieste, ma non mostrerebbe mai le risposte.
+        let reader_task = tokio::spawn(async move {
+            let mut reader = TokioBufReader::new(read_half).lines();
+
+            while let Ok(Some(line)) = reader.next_line().await {
+                match serde_json::from_str::<Message>(&line) {
+                    Ok(Message::AnalyticsResponse(response)) => {
+                        println!("\n=== Risultato analytics ===");
+                        println!("{response}");
+                        println!("===========================\n");
+                    }
+
+                    Ok(Message::AnalyticsErr(error)) => {
+                        eprintln!("\nErrore analytics: {error}\n");
+                    }
+
+                    Ok(other_message) => {
+                        println!("\nMessaggio dal server: {:?}\n", other_message);
+                    }
+
+                    Err(error) => {
+                        eprintln!("Risposta non valida dal server: {error}");
+                    }
+                }
+            }
+        });
 
         let writer_task = tokio::spawn(async move {
             while let Some(pkt) = rx.recv().await {
@@ -184,12 +216,13 @@ async fn main() -> io::Result<()> {
         let action = menu::run_main_menu(&tx, &username).await;
 
         match action {
-            menu::MenuAction::Logout => {
-                position_task.abort();
-                drop(tx);
-                let _ = writer_task.await;
-                println!("Tornando al menu iniziale...\n");
-                continue;
+           menu::MenuAction::Logout => {
+                 position_task.abort();
+                 reader_task.abort();
+                 drop(tx);
+                 let _ = writer_task.await;
+                 println!("Tornando al menu iniziale...\n");
+                 continue;
             }
         }
     }
