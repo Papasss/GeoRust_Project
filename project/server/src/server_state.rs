@@ -15,6 +15,7 @@ use crate::tracker_state::TrackerState;
 
 pub struct ServerState {
     pub connections: HashMap<String, mpsc::Sender<Message>>,
+    pub accounts: HashMap<String, String>,
     pub users: HashMap<String, TrackerState>,
 }
 
@@ -25,6 +26,7 @@ impl ServerState {
     pub fn new() -> Self {
         Self {
             connections: HashMap::new(),
+            accounts: HashMap::new(),
             users: HashMap::new(),
         }
     }
