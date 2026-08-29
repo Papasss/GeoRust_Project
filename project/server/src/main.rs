@@ -6,9 +6,8 @@ use crate::server_state::ServerState;
 mod server_state;
 mod tracker_state;
 mod auth;
+mod analytics;
 mod client_handler;
-
-
 
 #[tokio::main]
 async fn main() {

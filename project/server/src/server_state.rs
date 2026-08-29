@@ -10,7 +10,7 @@ use crate::tracker_state::TrackerState;
 
 pub struct ServerState {
     pub connections: HashMap<String, mpsc::Sender<Message>>,
-    pub accounts: HashMap<String, String>, 
+    pub accounts: HashMap<String, String>,
     pub users: HashMap<String, TrackerState>,
 }
 

@@ -4,11 +4,20 @@ use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
-
-use shared::messages::Message;
+use shared::messages::{AnalyticsField, AnalyticsPeriodMessage, Message};
+// Il client invia le posizioni come UpdatePosition, non come Message.
+// Per questo il server deve riuscire a deserializzare anche questo tipo.
 use shared::update_position::UpdatePosition;
-use shared::utils::send_packet;
 use crate::server_state::ServerState;
+// Modulo analytics: contiene la funzione sviluppata per calcolare
+// tragitto, distanza, velocità media, durata movimento e pause.
+use crate::analytics::{
+    analyze_movement,
+    AnalysisPeriod,
+    AnalyticsConfig,
+    MovementStatistics,
+    PositionSample,
+};
 
 
 
