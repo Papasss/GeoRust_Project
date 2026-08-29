@@ -26,7 +26,6 @@ pub enum Message {
     Register { username: String, password: String },
     Login { username: String, password: String },
 
-    // Autenticazione
     RegisterOk,
     RegisterErr(String),
     LoginOk,
