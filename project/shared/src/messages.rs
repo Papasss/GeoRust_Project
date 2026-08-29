@@ -2,6 +2,7 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Message {
+
     Register { username: String, password: String },
     Login { username: String, password: String },
 
@@ -17,4 +18,5 @@ pub enum Message {
     
     SendBroadcastMessage { text: String },
     IncomingBroadcastMessage { from: String, text: String },
+    
 }

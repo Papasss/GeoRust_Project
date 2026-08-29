@@ -10,14 +10,14 @@ impl Coordinates {
     
     
     
-    // Istanzia un nuovo oggetto Coordinates partendo da due stringhe testuali.
-    // Tenta di convertire i valori in numeri a virgola mobile (f32), assegnando 
-    // proattivamente un valore di default pari a 0.0 in caso di conversione fallita.
+    // Istanzia un nuovo oggetto Coordinates
 
     pub fn new(lat_str: String, lon_str: String) -> Self {
+
         let latitude = lat_str.parse::<f32>().unwrap_or(0.0);
         let longitude = lon_str.parse::<f32>().unwrap_or(0.0);
         Self { latitude, longitude }
+        
     }
 
 

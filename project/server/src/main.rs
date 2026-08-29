@@ -10,9 +10,6 @@ mod client_handler;
 
 
 
-// Avvia il server centrale mettendosi in ascolto delle connessioni in ingresso.
-// Inizializza lo stato condiviso, carica gli account dal file JSON asincronamente
-// e delega la gestione di ciascun client connesso a un nuovo task in background.
 #[tokio::main]
 async fn main() {
 
@@ -36,7 +33,9 @@ async fn main() {
     println!("Server listening on 127.0.0.1:8080");
 
     loop {
+
         let (socket, addr) = listener.accept().await.unwrap(); 
+        
         println!("New client connected: {addr}");
 
         let state_clone = Arc::clone(&state); 

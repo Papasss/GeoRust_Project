@@ -1,29 +1,31 @@
-use std::io::{self, Write};
+use std::{io::{self, Write}, time::Duration};
 
 use chrono::DateTime;
-use shared::{coordinates::Coordinates, messages::Message, parse_values, update_position::UpdatePosition};
-use tokio::io::AsyncBufReadExt;
-
+use shared::{coordinates::Coordinates, messages::Message, parse_values, update_position::UpdatePosition, utils::send_packet};
+use tokio::{io::{AsyncBufReadExt, BufReader, Lines}, net::tcp::{OwnedReadHalf, OwnedWriteHalf}, task::JoinHandle, sync::{mpsc}};
 
 
 pub enum Outgoing {
+
     Chat(Message),
     Position(UpdatePosition),
+
 }
 
 
 
-// Estrae i dati dal file di testo caricandoli in memoria per il futuro invio temporizzato.
-// Apre il file in modo asincrono, lo legge riga per riga per non bloccare il processo, 
-// e costruisce e restituisce il vettore completo di coordinate associate all'utente.
+// Estrae i dati e restituisce il vettore completo di coordinate associate 
+// all'utente.
+
 pub async fn load_user_path(file_path: &str, username: &str) -> io::Result<Vec<UpdatePosition>> {
+   
     let mut route: Vec<UpdatePosition> = Vec::new();
-    
     let file = tokio::fs::File::open(file_path).await?;
     let reader = tokio::io::BufReader::new(file);
     let mut lines = reader.lines();
 
     while let Ok(Some(line)) = lines.next_line().await {
+
         let values = parse_values(&line);
 
         if values.is_empty() { continue; }
@@ -43,15 +45,99 @@ pub async fn load_user_path(file_path: &str, username: &str) -> io::Result<Vec<U
     }
 
     Ok(route)
+
 }
 
-// Legge una riga di testo in input dal terminale bloccando temporaneamente l'esecuzione.
-// Mostra il prompt richiesto, attende la digitazione dell'utente e
-// restituisce la stringa pulita da eventuali spazi o ritorni a capo esterni.
-pub fn read_line_trimmed(prompt: &str) -> String {
-    print!("{prompt}");
-    io::stdout().flush().unwrap();
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).expect("Error reading input");
-    input.trim().to_string()
+// Legge una riga di testo in input dal terminale in modo asincrono.
+
+pub async fn read_line_async(prompt: String) -> String {
+
+    tokio::task::spawn_blocking(move || {
+
+        print!("{prompt}");
+
+        io::stdout().flush().unwrap();
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).expect("Error reading input");
+        
+        input.trim().to_string()
+    }).await.expect("Error in I/O Thread!")
+
+}
+
+
+
+// Avvia un task in background dedicato esclusivamente all'ascolto dei messaggi in arrivo.
+
+pub fn spawn_reader_task(mut reader: Lines<BufReader<OwnedReadHalf>>) -> JoinHandle<()> {
+
+    tokio::spawn(async move {
+
+        while let Ok(Some(line)) = reader.next_line().await {
+
+            if let Ok(msg) = serde_json::from_str::<Message>(&line) { 
+
+                match msg {
+
+                    Message::IncomingDirectMessage { from, text } => {
+                        println!("\n[Private message from {}]: {}", from, text);
+                    }
+
+                    Message::IncomingBroadcastMessage { from, text } => {
+                        println!("\n[Broadcast from {}]: {}", from, text);
+                    }
+
+                    _ => {} 
+                }
+            }
+        }
+    })
+}
+
+
+
+// Riceve i messaggi dal canale MPSC e li trasmette sulla rete
+
+pub fn spawn_writer_task(mut rx: mpsc::Receiver<Outgoing>, mut write_half: OwnedWriteHalf) -> JoinHandle<()> {
+
+    tokio::spawn(async move {
+
+        while let Some(packet) = rx.recv().await {
+
+            match packet {
+
+                Outgoing::Chat(msg) => { let _ = send_packet(&mut write_half, &msg).await; },
+                Outgoing::Position(upd) => { let _ = send_packet(&mut write_half, &upd).await; },
+            
+            }
+        }
+    })
+}
+
+
+
+// Esegue l'invio temporizzato delle coordinate geografiche dell'utente ogni
+// 30 secondi.
+
+pub fn spawn_position_task(route: Vec<UpdatePosition>, tx: mpsc::Sender<Outgoing>, username: String) -> JoinHandle<()> {
+
+    tokio::spawn(async move {
+
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        
+        for update in route {
+
+            interval.tick().await;
+
+            if tx.send(Outgoing::Position(update)).await.is_err() {
+
+                break;
+
+            }
+        }
+
+        println!("\nRoute completed for user {}.", username);
+
+    })
 }

@@ -18,9 +18,7 @@ impl ServerState {
     
     
     
-    // Istanzia il registro principale del server svuotando le mappe.
-    // Prepara la memoria che ospiterà le credenziali account persistenti, 
-    // gli stati utente logici e i canali di comunicazione per i client online.
+    // Istanzia il registro principale del server.
 
     pub fn new() -> Self {
         Self {
@@ -33,7 +31,6 @@ impl ServerState {
 
 
     // Attiva lo stato online inserendo il client appena loggato nella mappa.
-    // Associa lo username al relativo canale di comunicazione (Sender) asincrono.
 
     pub fn login(&mut self, username: &str, sender: mpsc::Sender<Message>) {
         self.connections.insert(username.to_string(), sender);
@@ -42,8 +39,6 @@ impl ServerState {
 
 
     // Rimuove i dati di rete attivi scollegando formalmente il client.
-    // Elimina il riferimento al canale del mittente scongiurando l'invio
-    // di dati a un terminale ormai inattivo.
 
     pub fn logout(&mut self, username: &str) {
         self.connections.remove(username);
@@ -60,58 +55,72 @@ impl ServerState {
 
 
 
-    // Smista un messaggio mirato sfruttando il canale TCP del destinatario indicato.
-    // Inoltra il pacchetto in modo asincrono unicamente se rileva una sessione online,
-    // restituendo dettagliatamente l'errore in caso di indirizzo introvabile o chiuso.
+    // Invia un messaggio diretto.
 
     pub async fn direct_message(&self, receiver: &str, msg: Message) -> Result<(), String> {
         
         if let Some(tx) = self.connections.get(receiver) {
+
             let res = tx.send(msg).await.map_err(|mex| mex.to_string());
+           
             match res {
+
                 Ok(_) => { 
                     println!("Messagge succesfully sended to:\t{receiver}");
                     Ok(())
                 },
+
                 Err(error) => {
                     println!("User '{receiver}' not connected:\tERROR: {error}");
                     Err(format!("Unable to reach'{receiver}'"))
                 }
             }
+
         } else {
+
             Err(format!("User '{}' not connected", receiver))
+
         }
     }
 
 
 
-    // Diffonde una copia del medesimo pacchetto a tutta l'utenza online attiva.
-    // Cicla attraverso l'elenco delle connessioni riutilizzando la logica di
-    // invio diretto e scartando passivamente eventuali errori derivati da drop.
+    // Invia un messaggio broadcast
 
     pub async fn broadcast(&self, msg: Message) {
+
         for user in self.connections.keys() {
+
             let _ = self.direct_message(user, msg.clone()).await;
+
         }
     }
 
 
 
-    // Genera un thread in background che monitora periodicamente le performance.
-    // Esegue una scansione dello stato hardware ogni due minuti esatti calcolando
-    // e registrando su log il tempo di CPU consumato.
+    // Genera un task in background che monitora periodicamente le performance
+    // ogni 2 minuti
 
     pub async fn start_log_cpu_usage() {
+
         let mut timer = interval(Duration::from_secs(120));
+
         tokio::spawn(async move {
+
             loop {
+
                 timer.tick().await;
+
                 let cpu_duration = Self::get_cpu_time();
 
                 if cpu_duration.is_some() {
+
                     let err =  Self::write_cpu_usage(cpu_duration.unwrap()).await;
+
                     if err.is_err() {
+                        
                         eprintln!("[CPU_USAGE] Error while writing logs:\t{}", err.unwrap_err());
+                    
                     }
                 }
             }
@@ -120,8 +129,8 @@ impl ServerState {
 
 
 
-    // Legge nativamente le statistiche del sistema operativo host recuperando
-    // specificamente la durata del processo impiegata sul processore fisico.
+    // Legge le statistiche del sistema operativo host recuperando
+    // specificamente la durata del processo impiegata sul processore.
 
     fn get_cpu_time() -> Option<Duration> {
         let cpu_now = ProcessTime::now();
@@ -130,8 +139,8 @@ impl ServerState {
 
 
 
-    // Seleziona selettivamente il percorso della directory appoggiandosi alla compilazione.
-    // Lascia che Cargo determini l'OS target escludendo il codice ridondante in fase di build.
+    // Determina tramite cargo il sistema operativo corrente e definisce la 
+    // directory corretta per il salvataggio delle risorse
 
     #[cfg(target_os = "windows")]
     fn get_log_dir() -> &'static str {
@@ -152,11 +161,12 @@ impl ServerState {
 
 
 
-    // Scrive materialmente l'utilizzo della CPU sul disco generando prima la cartella necessaria.
-    // Effettua l'append su un file testuale arricchendo i valori coi timestamp temporali
-    // senza ostacolare le operazioni asincrone primarie.
+    // Salva l'utilizzo della CPU su file
+
     async fn write_cpu_usage(cpu_time: Duration) -> Result<(), std::io::Error> {
+
         let path = Self::get_log_dir();
+
         tokio::fs::create_dir_all(path).await?;
 
         let mut file = OpenOptions::new().create(true).append(true).open(format!("{path}/cpu_performance.log")).await?;
@@ -175,6 +185,7 @@ impl ServerState {
     // l'utente sia già associato a uno stato tracker pregresso in memoria.
     
     pub fn process_packet(&mut self, packet: UpdatePosition) {
+        
         let tracker = self.users
             .entry(packet.username.clone())
             .or_insert_with(TrackerState::new);
