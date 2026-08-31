@@ -19,7 +19,8 @@ async fn main() {
     println!("Starting Control Server...");
 
     let mut initial_state = ServerState::new();
-    let accounts_path = "../data/accounts.json"; 
+    let accounts_path = "server/data/accounts.json"; 
+    
     
     initial_state.load_accounts(accounts_path).await;
     

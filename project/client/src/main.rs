@@ -33,7 +33,7 @@ async fn main() -> io::Result<()> {
         println!("Connected to server!");
 
         let username = auth_flow::register_and_login(&mut stream).await;
-        let user_dir = format!("client/users{}", username);
+        let user_dir = format!("client/users/{}", username);
         let file_path = format!("{}/route.txt", user_dir);
 
         path_manager::ensure_user_path_exists(&username, &user_dir, &file_path).await?;

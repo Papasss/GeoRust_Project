@@ -1,7 +1,7 @@
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::TcpStream;
 use shared::messages::Message;
-use shared::utils::send_packet;
+use shared::send_packet;
 
 use crate::utils::read_line_async;
 

@@ -1,12 +1,13 @@
 use tokio::fs::File;
 use std::io;
 use std::io::ErrorKind;
+use serde::Serialize;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 pub mod messages;
 pub mod coordinates;
 pub mod user_state;
 pub mod update_position;
-pub mod utils;
 
 
 
@@ -45,4 +46,22 @@ pub fn parse_values(line: &str) -> Vec<String> {
         .map(|s| s.to_string())
         .collect()
         
+}
+
+
+
+
+
+// Serializza un pacchetto dati in formato JSON e lo trasmette sul socket di rete.
+
+pub async fn send_packet<T, W>(writer: &mut W, packet: &T) -> std::io::Result<()>
+where
+    T: Serialize,
+    W: AsyncWrite + Unpin,
+{
+    let json_data = serde_json::to_string(packet)
+        .expect("Errore critico nella serializzazione JSON");
+        
+    writer.write_all(format!("{}\n", json_data).as_bytes()).await?;
+    writer.flush().await
 }

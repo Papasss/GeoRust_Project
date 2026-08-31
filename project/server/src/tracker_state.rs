@@ -6,10 +6,12 @@ use shared::user_state::UserState;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackerState {
+
     last_coordinates: Option<Coordinates>,
     state: UserState,
     last_move: Option<DateTime<chrono::Utc>>,
     history: Vec<UpdatePosition>,
+    
 }
 
 impl TrackerState {

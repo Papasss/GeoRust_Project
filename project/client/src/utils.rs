@@ -1,7 +1,7 @@
 use std::{io::{self, Write}, time::Duration};
 
 use chrono::DateTime;
-use shared::{coordinates::Coordinates, messages::Message, parse_values, update_position::UpdatePosition, utils::send_packet};
+use shared::{coordinates::Coordinates, messages::Message, parse_values, update_position::UpdatePosition, send_packet};
 use tokio::{io::{AsyncBufReadExt, BufReader, Lines}, net::tcp::{OwnedReadHalf, OwnedWriteHalf}, task::JoinHandle, sync::{mpsc}};
 
 
@@ -30,11 +30,11 @@ pub async fn load_user_path(file_path: &str, username: &str) -> io::Result<Vec<U
 
         if values.is_empty() { continue; }
 
-        let coordinates = Coordinates::new(values[0].clone(), values[1].clone());
+        
         let time = DateTime::parse_from_rfc3339(&values[2])
             .map(|time| time.with_timezone(&chrono::Utc))
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
-
+        let coordinates = Coordinates::new(values[0].clone(), values[1].clone(), time.timestamp());
         let update_position = UpdatePosition {
             username: username.to_string(),
             coordinates,
@@ -47,6 +47,8 @@ pub async fn load_user_path(file_path: &str, username: &str) -> io::Result<Vec<U
     Ok(route)
 
 }
+
+
 
 // Legge una riga di testo in input dal terminale in modo asincrono.
 
@@ -86,6 +88,16 @@ pub fn spawn_reader_task(mut reader: Lines<BufReader<OwnedReadHalf>>) -> JoinHan
 
                     Message::IncomingBroadcastMessage { from, text } => {
                         println!("\n[Broadcast from {}]: {}", from, text);
+                    }
+
+                    Message::AnalyticsResponse(response) => {
+                        println!("\n=== Risultato analytics ===");
+                        println!("{response}");
+                        println!("===========================\n");
+                    }
+
+                    Message::AnalyticsErr(error) => {
+                        eprintln!("\nErrore analytics: {error}\n");
                     }
 
                     _ => {} 

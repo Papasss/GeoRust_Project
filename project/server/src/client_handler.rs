@@ -1,22 +1,20 @@
 use std::sync::Arc;
+use shared::coordinates::Coordinates;
+use shared::send_packet;
 use tokio::io::{AsyncBufReadExt, BufReader, Lines};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::{mpsc, Mutex};
 use tokio::task::JoinHandle;
 use shared::messages::{AnalyticsField, AnalyticsPeriodMessage, Message};
-// Il client invia le posizioni come UpdatePosition, non come Message.
-// Per questo il server deve riuscire a deserializzare anche questo tipo.
 use shared::update_position::UpdatePosition;
+
 use crate::server_state::ServerState;
-// Modulo analytics: contiene la funzione sviluppata per calcolare
-// tragitto, distanza, velocità media, durata movimento e pause.
 use crate::analytics::{
     analyze_movement,
     AnalysisPeriod,
     AnalyticsConfig,
     MovementStatistics,
-    PositionSample,
 };
 
 
@@ -75,7 +73,7 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
                 let response = match server_state_lock.register(&username, &password) {
 
                     Ok(()) => {
-                        let _ = server_state_lock.save_accounts("../shared/data/accounts.json").await;
+                        let _ = server_state_lock.save_accounts("server/data/accounts.json").await;
                         Message::RegisterOk
                     }
 
@@ -163,6 +161,13 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
             match msg {
 
+                Message::AnalyticsRequest { field, period } => {
+
+                    let response = handle_analytics_request(username, field, period, state).await;
+
+                    send_to_logged_user(username, response, state).await;
+                }
+
                 Message::SendDirectMessage { to, text } => {
 
                     let server_state_lock = state.lock().await;
@@ -197,6 +202,153 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
         eprintln!("Unknown packet received from {}: {}", username, line);
     }
+}
+
+
+
+// Invia un messaggio al client autenticato usando il canale salvato in ServerState
+
+async fn send_to_logged_user( username: &str, msg: Message, state: &Arc<Mutex<ServerState>>,) {
+
+    let tx = {
+        let server_state_lock = state.lock().await;
+        server_state_lock.connections.get(username).cloned()
+    };
+        
+
+    if let Some(tx) = tx {
+        let _ = tx.send(msg).await;
+    }
+}
+
+
+
+// Converte il periodo ricevuto dal client nel tipo usato dal modulo analytics.
+
+fn convert_period(period: AnalyticsPeriodMessage) -> AnalysisPeriod {
+
+    match period {
+
+        AnalyticsPeriodMessage::CurrentDay => AnalysisPeriod::CurrentDay,
+
+        AnalyticsPeriodMessage::CurrentWeek => AnalysisPeriod::CurrentWeek,
+
+        AnalyticsPeriodMessage::CurrentMonth => AnalysisPeriod::CurrentMonth,
+
+        AnalyticsPeriodMessage::Custom {
+
+            start_timestamp,
+            end_timestamp,
+
+        } => AnalysisPeriod::Custom {
+
+            start_timestamp,
+            end_timestamp,
+
+        },
+    }
+}
+
+
+
+// Trasforma le statistiche calcolate in una risposta testuale leggibile dal client.
+
+fn format_analytics_response(field: AnalyticsField, stats: &MovementStatistics) -> String {
+
+    match field {
+
+        AnalyticsField::Path => {
+            let path = stats
+                .path
+                .iter()
+                .map(|sample| format!("({:.5}, {:.5})", sample.get_latitude(), sample.get_longitude()))
+                .collect::<Vec<String>>()
+                .join(" -> ");
+
+            format!("Tragitto percorso:\n{}", path)
+        }
+
+        AnalyticsField::TotalDistance => {
+            format!("Distanza totale percorsa: {:.3} km", stats.total_distance_km)
+        }
+
+        AnalyticsField::AverageSpeed => {
+            format!("Velocità media: {:.3} km/h", stats.average_speed_kmh)
+        }
+
+        AnalyticsField::MovementDuration => {
+            format!(
+                "Durata complessiva del movimento: {} secondi",
+                stats.movement_duration.as_secs()
+            )
+        }
+
+        AnalyticsField::PauseDuration => {
+            format!(
+                "Durata complessiva delle pause: {} secondi",
+                stats.pause_duration.as_secs()
+            )
+        }
+
+        AnalyticsField::All => {
+            let path = stats
+                .path
+                .iter()
+                .map(|sample| format!("({:.5}, {:.5})", sample.get_latitude(), sample.get_longitude()))
+                .collect::<Vec<String>>()
+                .join(" -> ");
+
+            format!(
+                "Tragitto percorso:\n{}\n\nDistanza totale: {:.3} km\nVelocità media: {:.3} km/h\nDurata movimento: {} secondi\nDurata pause: {} secondi",
+                path,
+                stats.total_distance_km,
+                stats.average_speed_kmh,
+                stats.movement_duration.as_secs(),
+                stats.pause_duration.as_secs()
+            )
+        }
+    }
+}
+
+
+
+// Gestisce la richiesta di analytics ricevuta dal client
+
+async fn handle_analytics_request(username: &str,field: AnalyticsField,period: AnalyticsPeriodMessage,state: &Arc<Mutex<ServerState>>) -> Message {
+    
+    let history = {
+
+        let server_state_lock = state.lock().await;
+
+        match server_state_lock.users.get(username) {
+
+            Some(tracker) => tracker.get_history().clone(),
+
+            None => {
+
+                return Message::AnalyticsErr("Nessuna posizione disponibile per questo utente.".to_string());
+            
+            }
+        }
+    };
+
+    if history.is_empty() {
+
+        return Message::AnalyticsErr("Cronologia posizioni vuota per questo utente.".to_string());
+
+    }
+
+
+    let samples: Vec<Coordinates> = history
+        .iter()
+        .map(|update| {update.coordinates.clone()})
+        .collect();
+
+    let analysis_period = convert_period(period);
+    let stats = analyze_movement(&samples, analysis_period, AnalyticsConfig::default());
+    let response = format_analytics_response(field, &stats);
+
+    Message::AnalyticsResponse(response)
 }
 
 

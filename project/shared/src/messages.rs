@@ -16,13 +16,14 @@ pub enum AnalyticsPeriodMessage {
     CurrentWeek,
     CurrentMonth,
     Custom {
-        start_timestamp: u64,
-        end_timestamp: u64,
+        start_timestamp: i64,
+        end_timestamp: i64,
     },
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Message {
+
     Register { username: String, password: String },
     Login { username: String, password: String },
 
@@ -31,11 +32,13 @@ pub enum Message {
     LoginOk,
     LoginErr(String),
 
+    SendDirectMessage {to: String, text: String},
+    IncomingDirectMessage {from: String, text: String},
+    SendBroadcastMessage {text: String},
+    IncomingBroadcastMessage {from: String, text: String},
+
     // Analytics
-    AnalyticsRequest {
-        field: AnalyticsField,
-        period: AnalyticsPeriodMessage,
-    },
+    AnalyticsRequest {field: AnalyticsField, period: AnalyticsPeriodMessage},
     AnalyticsResponse(String),
     AnalyticsErr(String),
 

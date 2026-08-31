@@ -6,8 +6,10 @@ use shared::messages::{
     Message,
 };
 
-use crate::read_line_trimmed;
-use crate::Outgoing;
+use crate::utils::Outgoing;
+use crate::utils::read_line_async;
+
+
 
 pub enum MenuAction {
 
@@ -17,18 +19,14 @@ pub enum MenuAction {
 
 
 // Invia al server una richiesta di analytics.
-// Per ora analizziamo tutto lo storico disponibile usando un intervallo Custom molto ampio.
-// Questo è utile perché il file percorso.txt contiene timestamp fittizi, quindi CurrentDay
-// potrebbe filtrare fuori tutte le posizioni.
-async fn send_analytics_request(
-    tx: &mpsc::Sender<Outgoing>,
-    field: AnalyticsField,
-) {
+
+async fn send_analytics_request(tx: &mpsc::Sender<Outgoing>, field: AnalyticsField) {
+    
     let request = Message::AnalyticsRequest {
         field,
         period: AnalyticsPeriodMessage::Custom {
             start_timestamp: 0,
-            end_timestamp: u64::MAX,
+            end_timestamp: i64::MAX,
         },
     };
 
@@ -37,8 +35,10 @@ async fn send_analytics_request(
     }
 }
 
-/// Menu principale post-login. Ritorna l'azione scelta dall'utente,
-/// così il chiamante (main) decide cosa fare (tornare al login o uscire).
+
+
+// Menu principale post-login.
+
 pub async fn run_main_menu(tx: &mpsc::Sender<Outgoing>, username: &str) -> MenuAction {
     println!("\n=== Welcome, {username}! ===");
 
@@ -53,7 +53,7 @@ pub async fn run_main_menu(tx: &mpsc::Sender<Outgoing>, username: &str) -> MenuA
         
         let choice = read_line_async("Select an action: ".to_string()).await;
 
-        match scelta.as_str() {
+        match choice.as_str() {
                         "1" => {
                 println!("Richiesta tragitto percorso al server...");
                 send_analytics_request(tx, AnalyticsField::Path).await;
