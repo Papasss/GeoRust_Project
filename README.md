@@ -1,79 +1,55 @@
-# G31
+# GeoRust
 
-# s362132, s361816, s361837, s364217
+**Sistema di Geolocalizzazione Client/Server**
 
-# GeoRust - Sistema di Geolocalizzazione Client/Server 🌍🦀
+*Progetto realizzato per il corso di Programmazione di Sistema (modulo Rust) presso il Politecnico di Torino.*
+*Gruppo G31: s362132, s361816, s361837, s364217*
 
-Un sistema di geolocalizzazione e tracciamento flotte sviluppato in Rust. 
-Progetto realizzato per il corso di **Programmazione in RUST** presso il **Politecnico di Torino**.
+Abbiamo costruito questo sistema per monitorare flotte di veicoli in tempo reale. L'idea di base è che ogni veicolo (il Client) simula un viaggio reale inviando aggiornamenti GPS continui. Dall'altra parte, il Server centrale raccoglie queste posizioni, calcola statistiche come la velocità media e i tempi di sosta, e gestisce lo scambio di messaggi di testo tra i conducenti e la centrale. 
 
-L'applicazione utilizza un'architettura **Client/Server** per gestire il monitoraggio continuo di una flotta di veicoli, l'analisi dei percorsi, le statistiche di movimento e lo scambio di messaggi testuali.
-
----
-
-## 📋 Indice
-1. [Descrizione del Progetto](#-descrizione-del-progetto)
-2. [Architettura del Codice](#-architettura-del-codice)
-3. [Funzionalità Principali](#-funzionalità-principali)
-4. [La Macchina a Stati](#-la-macchina-a-stati)
-5. [Requisiti e Installazione](#-requisiti-e-installazione)
-6. [Come Eseguire il Progetto](#-come-eseguire-il-progetto)
+Ci siamo concentrati molto sulle performance, cercando di mantenere l'applicativo leggero e multipiattaforma (Linux, Windows, macOS), tenendo sempre d'occhio l'uso effettivo della CPU.
 
 ---
 
-## 🚀 Descrizione del Progetto
-
-L'obiettivo del progetto è tracciare lo stato e la posizione degli utenti (veicoli) registrati a sistema[cite: 1]. 
-I veicoli (Client) simulano il proprio movimento inviando aggiornamenti periodici delle loro coordinate GPS[cite: 1]. Il Server centrale riceve i dati, calcola le statistiche di viaggio (tragitto, velocità media, pause) su base giornaliera, settimanale e mensile, e monitora l'utilizzo delle proprie risorse di CPU[cite: 1]. 
-
-Il sistema è multipiattaforma ed è ottimizzato per garantire elevate prestazioni riducendo al minimo la dimensione degli eseguibili[cite: 1].
-
----
-
-## 🏗 Architettura del Codice
-
-Il progetto sfrutta la funzionalità **Workspace** di Cargo per separare logicamente i componenti. La struttura è divisa in tre *Crate* principali:
-
-*   **`shared/` (Libreria)**: Contiene il "linguaggio comune". Qui sono definite le strutture dati serializzabili (tramite `serde`) usate da entrambe le parti, come `Coordinates`, `UpdatePosition` e gli Enum per gli stati.
-*   **`client/` (Eseguibile)**: Il software a bordo del veicolo. Legge un percorso simulato da un file CSV locale e trasmette la posizione esatta al server a intervalli regolari (ogni 30 secondi)[cite: 1]. Permette inoltre di inviare messaggi di testo al server[cite: 1].
-*   **`server/` (Eseguibile)**: Il cuore dell'elaborazione. Accetta connessioni in rete tramite socket asincroni (`Tokio`), mantiene in memoria lo storico dei veicoli, gestisce la macchina a stati per le transizioni di movimento e fornisce strumenti di interrogazione per le statistiche.
+## Indice
+1. [Architettura del Codice](#-architettura-del-codice)
+2. [Funzionalità Principali](#-funzionalità-principali)
+3. [La Macchina a Stati](#-la-macchina-a-stati)
+4. [Requisiti e Installazione](#-requisiti-e-installazione)
 
 ---
 
-## ✨ Funzionalità Principali
+## Architettura del Codice
 
-### Lato Client (Emulatore Veicolo)
-*   **Registrazione/Login:** Accesso tramite account e password.
-*   **Emulazione Movimento:** Lettura di un file di coordinate e timestamp per simulare percorsi realistici (es. Torino -> Asti).
-*   **Trasmissione Dati:** Invio asincrono e continuo della posizione ogni 30 secondi.
-*   **Comunicazione:** Invio di messaggi testuali verso il server centrale.
+Per mantenere il codice pulito e non pestarci i piedi a vicenda, abbiamo strutturato il progetto usando un **Cargo Workspace** diviso in tre moduli principali:
 
-### Lato Server (Backend)
-*   **Tracciamento Continuo:** Ricezione e immagazzinamento in RAM (`HashMap`) delle coordinate in tempo reale.
-*   **Analisi Movimento:** Calcolo di tragitto, velocità media e durata di movimenti/pause.
-*   **Comunicazione Bidirezionale:** Invio di messaggi testuali singoli o in broadcast (a tutti gli utenti).
-*   **Log Prestazionali:** Generazione automatica di un file di log ogni 2 minuti con i dettagli sul tempo di CPU consumato.
+* **`shared/`**: È la libreria condivisa, il vero e proprio vocabolario comune tra client e server. Qui dentro si trovano i tipi base e le strutture dati serializzabili (grazie a `serde`), come le coordinate geografiche e i pacchetti dei messaggi.
+* **`client/`**: Il software di bordo. Legge un percorso simulato da un file locale e invia un "ping" con la posizione esatta al server ogni 30 secondi. Permette inoltre di chattare in tempo reale.
+* **`server/`**: Il motore del sistema. Gestisce le connessioni di rete appoggiandosi ai socket asincroni di Tokio, tiene traccia dei veicoli in memoria e smista la messaggistica istantanea in modo concorrente.
 
 ---
 
-## 🚦 La Macchina a Stati (User Tracker)
+## Funzionalità Principali
 
-Il server gestisce lo stato di ogni utente applicando una rigorosa logica temporale basata sulle coordinate ricevute. Gli stati possibili sono tre: **Sconnesso**, **Fermo** e **In Movimento**.
+**Lato Client (Veicolo)**
+* **Login & Registrazione:** Accesso sicuro tramite credenziali.
+* **Simulazione Movimento:** Usa un file locale con coordinate e timestamp per simulare viaggi realistici.
+* **Tracking Automatico:** Spara la posizione in background ogni 30 secondi, lasciando sempre libera e reattiva l'interfaccia.
+* **Chat:** Scambio di messaggi di testo diretti o in broadcast verso gli altri veicoli.
 
-Le regole di transizione implementate sono le seguenti:
-1.  **Verso "In Movimento":** Avviene istantaneamente al rilevamento del *primo cambiamento* di coordinata spaziale rispetto all'ultima posizione nota.
-2.  **Verso "Fermo":** Avviene esclusivamente quando la coordinata dell'utente *non cambia per almeno 3 minuti consecutivi* (equivalenti a 6 invii da parte del client).
+**Lato Server (Centrale)**
+* **Tracciamento:** Mantiene lo storico e le posizioni attuali della flotta in RAM (tramite una `HashMap`) per un accesso rapidissimo.
+* **Analytics:** Calcola le distanze, la velocità media e la durata effettiva di pause e movimenti su scala giornaliera, settimanale e mensile.
+* **Messaging:** Fa da postino smistando in sicurezza i messaggi asincroni tra i vari client connessi.
+* **Monitoraggio CPU:** Un demone in background registra automaticamente su file il tempo di CPU consumato dall'applicativo, con uno scatto ogni 2 minuti.
 
 ---
 
-## ⚙️ Requisiti e Installazione
+## Logica di tracking
 
-Assicurati di avere l'ambiente di sviluppo Rust installato sulla tua macchina. Il progetto è stato testato su sistemi operativi Linux, Windows e MacOS.
+Il server non si limita a salvare le coordinate, ma deduce cosa sta facendo il veicolo tramite una piccola macchina a stati temporale. Un veicolo può trovarsi in tre situazioni: **Sconnesso**, **Fermo** e **In Movimento**.
 
-```bash
-# Clona il repository
-git clone [https://github.com/tuo-utente/geo_rust.git](https://github.com/tuo-utente/geo_rust.git)
-cd geo_rust
-
-# Compila l'intero Workspace (Client, Server e Shared)
-cargo build --release
+Le regole di transizione sono semplici:
+* **Diventare "In Movimento":** Scatta al volo, non appena il server riceve una coordinata spaziale diversa dall'ultima registrata.
+* **Diventare "Fermo":** Per evitare falsi parcheggi, il server considera un veicolo effettivamente fermo solo se riceve la stessa identica coordinata per almeno 3 minuti.
+---

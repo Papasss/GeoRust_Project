@@ -1,24 +1,53 @@
 use serde::{Serialize, Deserialize};
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct Coordinates {
-    
-    latitude: f32,
-    longitude: f32
+    latitude: f64,
+    longitude: f64,
+    timestamp: i64,
 }
 
 impl Coordinates {
-    pub fn new(lat_str: String, lon_str: String) -> Self {
-        let latitude = lat_str.parse::<f32>().unwrap_or(0.0);
-        let longitude = lon_str.parse::<f32>().unwrap_or(0.0);
-        Self { latitude, longitude }
+    
+    
+    
+    // Istanzia un nuovo oggetto Coordinates
+
+    pub fn new(lat_str: String, lon_str: String, timestamp: i64) -> Self {
+
+        let latitude = lat_str.parse::<f64>().unwrap_or(0.0);
+        let longitude = lon_str.parse::<f64>().unwrap_or(0.0);
+        Self {latitude, longitude, timestamp}
+        
     }
 
-    pub fn get_latitude(&self) -> f32 {
+
+
+    // Restituisce il valore numerico della latitudine attualmente memorizzata.
+
+    pub fn get_latitude(&self) -> f64 {
+
         self.latitude
+
     }
 
-    pub fn get_longitude(&self) -> f32 {
+
+
+    // Restituisce il valore numerico della longitudine attualmente memorizzata.
+    
+    pub fn get_longitude(&self) -> f64 {
+
         self.longitude
+
+    }
+
+
+
+    // Restituisce il timestamp della coordinata
+
+    pub fn get_timestamp(&self) -> i64 {
+
+        self.timestamp
+
     }
 }
