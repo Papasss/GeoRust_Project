@@ -2,7 +2,7 @@ use crate::server_state::ServerState;
 use std::collections::HashMap;
 use std::io::ErrorKind;
 use tokio::fs;
-use sha2::{Digest, Sha256};
+use bcrypt::{hash, verify, DEFAULT_COST};
 
 #[derive(Debug)]
 pub enum AuthError {
@@ -10,6 +10,8 @@ pub enum AuthError {
     UsernameTaken,
     UserNotFound,
     WrongPassword,
+    InvalidUsername,
+    PasswordTooShort,
 
 }
 
@@ -21,7 +23,8 @@ impl std::fmt::Display for AuthError {
             AuthError::UsernameTaken => write!(f, "Nome utente già in uso"),
             AuthError::UserNotFound => write!(f, "Utente non trovato"),
             AuthError::WrongPassword => write!(f, "Password errata"),
-
+            AuthError::InvalidUsername => write!(f, "Nome utente non valido"),
+            AuthError::PasswordTooShort => write!(f, "Password troppo corta, minimo 6 caratteri"),
         }
     }
 }
@@ -32,10 +35,13 @@ impl std::fmt::Display for AuthError {
 
 fn hash_password(password: &str) -> String {
 
-    let mut hasher = Sha256::new();
-   
-    hasher.update(password.as_bytes()); 
-    format!("{:x}", hasher.finalize())
+    hash(password, DEFAULT_COST).expect("Errore nell'hashing della password")
+
+}
+
+fn verify_password(password: &str, hashed: &str) -> bool {
+    
+    verify(password, hashed).unwrap_or(false)
 
 }
 
@@ -47,9 +53,9 @@ impl ServerState {
     // utilizzabile in memoria. Qualora il file fosse mancante, avvia il tutto 
     // con un registro anagrafico pulito.
 
-    pub async fn load_accounts(&mut self, path: &str) {
+    pub async fn load_accounts(&mut self) {
 
-        match fs::read_to_string(path).await {
+        match fs::read_to_string(self.accounts_file_path()).await {
 
             Ok(content) => {
 
@@ -58,7 +64,7 @@ impl ServerState {
                     Ok(accounts) => {
 
                         self.accounts = accounts;
-                        println!("Caricati {} account dal file {}", self.accounts.len(), path);
+                        println!("Caricati {} account dal file {}", self.accounts.len(), self.accounts_file_path().display());
                     
                     }
 
@@ -86,21 +92,23 @@ impl ServerState {
     
     
     
-    // Converte in JSON tutti gli account registrati e li salva su disco.
-
-    pub async fn save_accounts(&self, path: &str) -> std::io::Result<()> {
-
-        let json = serde_json::to_string_pretty(&self.accounts)
-            .expect("Errore nella serializzazione degli account");
-
-        fs::write(path, json).await
-    }
-    
-    
-    
     // Esegue la registrazione controllando se l'alias scelto è già occupato.
 
     pub fn register(&mut self, username: &str, password: &str) -> Result<(), AuthError> {
+
+        if username.trim().is_empty() {
+
+            return Err(AuthError::InvalidUsername);
+        
+
+        }
+
+        if password.len() < 6 {
+
+            return Err(AuthError::PasswordTooShort);
+        
+        
+        }
 
         if self.accounts.contains_key(username) {
 
@@ -120,7 +128,7 @@ impl ServerState {
 
         let account = self.accounts.get(username).ok_or(AuthError::UserNotFound)?;
 
-        if account != &hash_password(password) {
+        if !verify_password(password, account) {
 
             return Err(AuthError::WrongPassword);
 
