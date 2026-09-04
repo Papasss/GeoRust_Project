@@ -1,7 +1,7 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, time::Duration, path::{PathBuf, Path}, io,};
 use tokio::sync::mpsc;
 use tokio::time::interval;
-use tokio::fs::OpenOptions;
+use tokio::fs::{self, OpenOptions};
 use tokio::io::AsyncWriteExt;
 use shared::messages::Message;
 use cpu_time::ProcessTime;
@@ -12,6 +12,7 @@ pub struct ServerState {
     pub connections: HashMap<String, mpsc::Sender<Message>>,
     pub accounts: HashMap<String, String>,
     pub users: HashMap<String, TrackerState>,
+    accounts_file_path: PathBuf,
 }
 
 impl ServerState {
@@ -21,13 +22,23 @@ impl ServerState {
     // Istanzia il registro principale del server.
 
     pub fn new() -> Self {
+        let accounts_file_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("data")
+            .join("accounts.json");
+
         Self {
             connections: HashMap::new(),
             accounts: HashMap::new(),
             users: HashMap::new(),
+            accounts_file_path,
         }
     }
 
+    //Sorgente del percorso del file account
+
+    pub fn accounts_file_path(&self) -> &Path {
+        &self.accounts_file_path
+    }
 
 
     // Attiva lo stato online inserendo il client appena loggato nella mappa.
@@ -53,6 +64,20 @@ impl ServerState {
         self.connections.contains_key(username) 
     }
 
+    //salvataggio account
+    pub async fn save_accounts(&self) -> io::Result<()> {
+
+        let json = serde_json::to_string_pretty(&self.accounts)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        if let Some(parent) = self.accounts_file_path.parent() {
+
+            fs::create_dir_all(parent).await?;
+
+        }
+
+        fs::write(&self.accounts_file_path, json).await
+    }
 
 
     // Invia un messaggio diretto.
@@ -167,7 +192,7 @@ impl ServerState {
 
         let path = Self::get_log_dir();
 
-        tokio::fs::create_dir_all(path).await?;
+        fs::create_dir_all(path).await?;
 
         let mut file = OpenOptions::new().create(true).append(true).open(format!("{path}/cpu_performance.log")).await?;
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");

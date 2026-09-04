@@ -73,7 +73,9 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
                 let response = match server_state_lock.register(&username, &password) {
 
                     Ok(()) => {
-                        let _ = server_state_lock.save_accounts("server/data/accounts.json").await;
+                        if let Err(e) = server_state_lock.save_accounts().await {
+                            eprintln!("Errore nel salvataggio degli account: {e}");
+                        }
                         Message::RegisterOk
                     }
 
