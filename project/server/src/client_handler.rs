@@ -193,6 +193,14 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
         if let Ok(update_position) = serde_json::from_str::<UpdatePosition>(&line) {
 
+            println!(
+                "[SERVER] Received coordinates from {}: lat={}, lon={}, time={}",
+                update_position.username,
+                update_position.coordinates.get_latitude(),
+                update_position.coordinates.get_longitude(),
+                update_position.time
+            );
+
             let mut server_state_lock = state.lock().await;
 
             server_state_lock.process_packet(update_position);
