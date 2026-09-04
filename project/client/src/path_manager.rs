@@ -5,35 +5,73 @@ use tokio::io::AsyncWriteExt;
 
 
 
-// Genera un file di testo contenente coordinate e timestamp casuali.
-// Scrive il percorso sul file simulando il movimento o la sosta di un utente 
-// con intervalli fissi di 30 secondi.
+// Generates a text file containing random coordinates and timestamps.
+// It simulates a user moving or stopping with fixed 30-second intervals.
+
+fn random_start_point(rng: &mut rand::rngs::ThreadRng) -> (f64, f64) {
+    let min_latitude = 44.9;
+    let max_latitude = 45.2;
+    let min_longitude = 7.5;
+    let max_longitude = 7.9;
+
+    let latitude = rng.gen_range(min_latitude..=max_latitude);
+    let longitude = rng.gen_range(min_longitude..=max_longitude);
+
+    (latitude, longitude)
+}
+
+fn move_point_by_meters(lat: f64, lon: f64, distance_m: f64, bearing_deg: f64) -> (f64, f64) {
+    const EARTH_RADIUS_M: f64 = 6_371_000.0;
+    let bearing = bearing_deg.to_radians();
+    let angular_distance = distance_m / EARTH_RADIUS_M;
+
+    let lat1 = lat.to_radians();
+    let lon1 = lon.to_radians();
+
+    let lat2 = (lat1.sin() * angular_distance.cos() +
+        lat1.cos() * angular_distance.sin() * bearing.cos())
+        .asin();
+
+    let lon2 = lon1
+        + (bearing.sin() * angular_distance.sin() * lat1.cos())
+            .atan2(angular_distance.cos() - lat1.sin() * lat2.sin());
+
+    (lat2.to_degrees(), lon2.to_degrees())
+}
 
 pub async fn create_random_path(file_path: &str) -> std::io::Result<()> {
-
     let mut file = File::create(file_path).await?;
     let mut rng = rand::thread_rng();
-    
-    let mut lat_attuale = 45.0618513;
-    let mut lon_attuale = 7.6606506;
-    let mut tempo_secondi = 0;
-    
-    for _ in 0..10 {
-        let sta_fermo = rng.gen_bool(0.2); 
-        
-        if !sta_fermo {
-            lat_attuale += rng.gen_range(-0.005..0.005);
-            lon_attuale += rng.gen_range(-0.005..0.005);
-        }
-        
-        let minuti = tempo_secondi / 60;
-        let secondi = tempo_secondi % 60;
-        let timestamp = format!("2026-07-08T07:{:02}:{:02}Z", minuti, secondi);
-        
-        let riga = format!("{},{},{}\n", lat_attuale, lon_attuale, timestamp);
-        file.write_all(riga.as_bytes()).await?;
-        
-        tempo_secondi += 30;
+
+    let mut current_latitude;
+    let mut current_longitude;
+    let mut elapsed_seconds = 0;
+    let total_points = rng.gen_range(10..=50);
+
+    (current_latitude, current_longitude) = random_start_point(&mut rng);
+
+    for _ in 0..total_points {
+        let is_stopped = rng.gen_bool(0.15);
+        let distance_meters = if is_stopped {
+            0.0
+        } else {
+            rng.gen_range(0.0..=200.0)
+        };
+
+        let bearing_degrees = rng.gen_range(0.0..360.0);
+        let (new_latitude, new_longitude) =
+            move_point_by_meters(current_latitude, current_longitude, distance_meters, bearing_degrees);
+        current_latitude = new_latitude;
+        current_longitude = new_longitude;
+
+        let minutes = elapsed_seconds / 60;
+        let seconds = elapsed_seconds % 60;
+        let timestamp = format!("2026-07-08T07:{:02}:{:02}Z", minutes, seconds);
+
+        let row = format!("{},{},{}\n", current_latitude, current_longitude, timestamp);
+        file.write_all(row.as_bytes()).await?;
+
+        elapsed_seconds += 30;
     }
 
     Ok(())
@@ -50,11 +88,11 @@ pub async fn ensure_user_path_exists(username: &str, user_dir: &str, file_path: 
     let path = Path::new(user_dir);
 
     if !path.exists() {
-        println!("\nCreazione della cartella e del percorso di {} ...", username);
+        println!("\nCreating the user folder and path for {} ...", username);
         fs::create_dir_all(path).await?;
         create_random_path(file_path).await?;
     } else {
-        println!("\nUtente '{}' esistente. Lettura del file esistente...", username);
+        println!("\nUser '{}' exists. Reading existing file...", username);
     }
 
     Ok(())
