@@ -40,10 +40,16 @@ pub async fn register_and_login(stream: &mut TcpStream) -> String {
 
     loop {
 
-        println!("\n=== GEORUST ===");
+        // Pulisce lo schermo e sposta il cursore in alto a sinistra
+        print!("\x1B[2J\x1B[1;1H");
+        
+        println!("╔════════════════════════════════════╗");
+        println!("║             GEORUST                ║");
+        println!("╚════════════════════════════════════╝");
         println!("1) Register");
         println!("2) Login");
         println!("3) Exit");
+        println!("──────────────────────────────────────");
         
         let choice = read_line_async("Select an option: ".to_string()).await;
 
@@ -58,17 +64,22 @@ pub async fn register_and_login(stream: &mut TcpStream) -> String {
                 match read_response(stream).await {
 
                     Some(Message::RegisterOk) => {
-                        println!("Registration successful! You can now log in.");
+                        println!("\n\x1b[32mRegistration successful! You can now log in.\x1b[0m");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     }
 
                     Some(Message::RegisterErr(msg)) => {
-                        println!("Registration failed: {}", msg);
+                        println!("\n\x1b[31mRegistration failed: {}\x1b[0m", msg);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     }
 
-                    Some(_) => println!("Unexpected response from server."),
+                    Some(_) => {
+                        println!("\n\x1b[31mUnexpected response from server.\x1b[0m");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    }
 
                     None => {
-                        eprintln!("Connection lost with the server.");
+                        eprintln!("\n\x1b[31mConnection lost with the server.\x1b[0m");
                         std::process::exit(1);
                     }
                 }
@@ -83,18 +94,23 @@ pub async fn register_and_login(stream: &mut TcpStream) -> String {
                 match read_response(stream).await {
 
                     Some(Message::LoginOk) => {
-                        println!("Login successful! Welcome, {}.", username);
+                        println!("\n\x1b[32mLogin successful! Welcome, {}.\x1b[0m", username);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                         return username; 
                     }
 
                     Some(Message::LoginErr(msg)) => {
-                        println!("Login failed: {}", msg);
+                        println!("\n\x1b[31mLogin failed: {}\x1b[0m", msg);
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     }
 
-                    Some(_) => println!("Unexpected response from server."),
+                    Some(_) => {
+                        println!("\n\x1b[31mUnexpected response from server.\x1b[0m");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    }
 
                     None => {
-                        eprintln!("Connection lost with the server.");
+                        eprintln!("\n\x1b[31mConnection lost with the server.\x1b[0m");
                         std::process::exit(1);
                     }
                 }
@@ -107,7 +123,10 @@ pub async fn register_and_login(stream: &mut TcpStream) -> String {
 
             }
             
-            _ => println!("Invalid option, please try again."),
+            _ => {
+                println!("\n\x1b[33mInvalid option, please try again.\x1b[0m");
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
         }
     }
 }

@@ -31,53 +31,42 @@ pub enum MenuAction {
 }
 
 
-// Invia al server una richiesta di analytics.
+// per gli altri: caratteri di escape:
 //
-// Il client NON calcola le statistiche.
-// Qui costruisce solo la richiesta con:
-// - il campo richiesto: tragitto, velocità media, movimento o pause;
-// - il periodo temporale scelto dall'utente.
+// - \x1B[2J\x1B[1;1H => utilizzata per pulire lo schermo del terminale 
+//   spostare il cursore in alto a sinistra.
 //
-// Il calcolo vero viene fatto lato server.
-async fn send_analytics_request(
-    tx: &mpsc::Sender<Outgoing>,
-    field: AnalyticsField,
-    period: AnalyticsPeriodMessage,
-) {
-    let request = Message::AnalyticsRequest {
-        field,
-        period,
-    };
-
-    if tx.send(Outgoing::Chat(request)).await.is_err() {
-        eprintln!("Impossibile inviare la richiesta analytics: connessione con il server interrotta.");
-    }
-}
-
+// - \x1b[31m => che cambia il colore del testo del terminale in rosso
+//
+// - \x1b[33m => verde
 
 
 // Menu principale post-login.
-
 // Chiede all'utente su quale periodo vuole fare l'analisi.
-//
 // Ritorna Some(period) se l'utente sceglie un periodo valido.
 // Ritorna None se l'utente decide di tornare al menu principale.
+
 async fn choose_analytics_period() -> Option<AnalyticsPeriodMessage> {
+
     loop {
-        println!("\n--- Analysis period ---");
+
+        print!("\x1B[2J\x1B[1;1H");
+        println!("╔════════════════════════════════════╗");
+        println!("║          ANALYSIS PERIOD           ║");
+        println!("╚════════════════════════════════════╝");
         println!("1) All available history");
         println!("2) Current day");
         println!("3) Current week");
         println!("4) Current month");
         println!("5) Custom range");
         println!("6) Back");
+        println!("──────────────────────────────────────");
 
         let choice = read_line_async("Select a period: ".to_string()).await;
 
         match choice.as_str() {
+            
             "1" => {
-                // Analizza tutto lo storico disponibile.
-                // È lo stesso comportamento che avevamo prima.
                 return Some(AnalyticsPeriodMessage::Custom {
                     start_timestamp: 0,
                     end_timestamp: i64::MAX,
@@ -105,34 +94,31 @@ async fn choose_analytics_period() -> Option<AnalyticsPeriodMessage> {
             }
 
             _ => {
-                println!("Invalid period, please try again.");
+                println!("\x1b[33mInvalid period, please try again.\x1b[0m");
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }
     }
 }
 
 
+
 // Permette all'utente di inserire un intervallo temporale personalizzato.
-//
-// Formati accettati:
-// - 2026-10-10
-// - 2026-10-10 09:30
-// - 2026-10-10 09:30:00
-// - 10/10/2026
-// - 10/10/2026 09:30
-// - 10-10-2026
-// - 10-10-2026 09:30
-//
 // Se l'utente inserisce solo la data:
 // - la data iniziale viene interpretata come 00:00:00;
 // - la data finale viene interpretata come 23:59:59.
+
 async fn read_custom_period() -> Option<AnalyticsPeriodMessage> {
+
     loop {
-        println!("\nCustom range examples:");
+
+        print!("\x1B[2J\x1B[1;1H");
+        println!("--- Custom range examples ---");
         println!("Start date/time: 2026-10-10");
         println!("End date/time:   2026-11-20");
         println!("Or with hours:   2026-10-10 09:30");
-        println!("Type 'back' to return to the main menu.");
+        println!("Type 'back' to return to the previous menu.");
+        println!("──────────────────────────────────────");
 
         let start_input = read_line_async("Start date/time: ".to_string()).await;
 
@@ -149,7 +135,8 @@ async fn read_custom_period() -> Option<AnalyticsPeriodMessage> {
         let start_timestamp = match parse_user_datetime(&start_input, false) {
             Some(timestamp) => timestamp,
             None => {
-                println!("Invalid start date/time format. Please try again.");
+                println!("\x1b[31mInvalid start date/time format. Please try again.\x1b[0m");
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 continue;
             }
         };
@@ -157,13 +144,15 @@ async fn read_custom_period() -> Option<AnalyticsPeriodMessage> {
         let end_timestamp = match parse_user_datetime(&end_input, true) {
             Some(timestamp) => timestamp,
             None => {
-                println!("Invalid end date/time format. Please try again.");
+                println!("\x1b[31mInvalid end date/time format. Please try again.\x1b[0m");
+                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 continue;
             }
         };
 
         if start_timestamp > end_timestamp {
-            println!("Invalid range: start date/time must be before end date/time.");
+            println!("\x1b[31mInvalid range: start date/time must be before end date/time.\x1b[0m");
+            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
             continue;
         }
 
@@ -175,12 +164,11 @@ async fn read_custom_period() -> Option<AnalyticsPeriodMessage> {
 }
 
 
+
 // Converte una data/ora inserita dall'utente in timestamp Unix.
-//
-// is_end serve solo quando l'utente inserisce una data senza orario:
-// - per l'inizio usiamo 00:00:00;
-// - per la fine usiamo 23:59:59.
+
 fn parse_user_datetime(input: &str, is_end: bool) -> Option<i64> {
+
     let input = input.trim();
 
     let datetime_formats = [
@@ -220,82 +208,98 @@ fn parse_user_datetime(input: &str, is_end: bool) -> Option<i64> {
 }
 
 
+
 // Trasforma una data/ora locale in timestamp Unix.
-//
-// L'utente inserisce date e orari come orari locali.
-// Il timestamp Unix ottenuto viene poi inviato al server.
+
 fn local_datetime_to_timestamp(datetime: NaiveDateTime) -> Option<i64> {
+
     match Local.from_local_datetime(&datetime) {
         LocalResult::Single(local_datetime) => Some(local_datetime.timestamp()),
-
-        // Caso raro del cambio ora legale/solare:
-        // lo stesso orario locale può corrispondere a due istanti diversi.
-        // Prendiamo il primo per evitare di bloccare il programma.
         LocalResult::Ambiguous(first_datetime, _) => Some(first_datetime.timestamp()),
-
-        // Caso raro: orario inesistente per cambio ora legale.
         LocalResult::None => None,
     }
 }
 
 
-// Funzione di supporto per non ripetere la scelta del periodo
-// nei casi 1, 2, 3 e 4 del menu.
+
+// Funzione unificata per non ripetere la scelta del periodo.
+// Mette in pausa l'interfaccia utente in attesa del risultato dal task di lettura.
+
 async fn ask_period_and_send_analytics_request(
     tx: &mpsc::Sender<Outgoing>,
     field: AnalyticsField,
 ) {
+
     match choose_analytics_period().await {
+        
         Some(period) => {
-            send_analytics_request(tx, field, period).await;
+            
+            let request = Message::AnalyticsRequest { field, period };
+
+            if tx.send(Outgoing::Chat(request)).await.is_err() {
+                eprintln!("\x1b[31mError: connection with writer task lost.\x1b[0m");
+                let _ = read_line_async("\n\x1b[33mPress Enter to return to the main menu...\x1b[0m".to_string()).await;
+            } else {
+                
+                // L'interfaccia si ferma qui. Nel frattempo, il task di background riceve 
+                // e stampa i risultati di Analytics a schermo senza che il menù lo copra.
+                println!("\n\x1b[36mWaiting for server response...\x1b[0m");
+                let _ = read_line_async("\n\x1b[33mPress Enter to return to the main menu...\x1b[0m".to_string()).await;
+                
+            }
         }
 
-        None => {
-            println!("Returning to main menu.");
-        }
+        None => {} // L'utente ha scelto "Back", il ciclo riprende immediatamente
     }
 }
 
 
+
+// Loop principale dell'interfaccia utente a sessione attiva.
+
 pub async fn run_main_menu(tx: &mpsc::Sender<Outgoing>, username: &str) -> MenuAction {
-    println!("\n=== Welcome, {username}! ===");
 
     loop {
-        println!("\n--- Menu ---");
+
+        print!("\x1B[2J\x1B[1;1H");
+        println!("=== Welcome, \x1b[32m{}\x1b[0m! ===", username);
+        println!("\n╔════════════════════════════════════╗");
+        println!("║             MAIN MENU              ║");
+        println!("╚════════════════════════════════════╝");
         println!("1) Route info");
         println!("2) Average speed");
         println!("3) Movement duration");
         println!("4) Pause duration");
         println!("5) Send message");
         println!("6) Logout");
+        println!("──────────────────────────────────────");
         
         let choice = read_line_async("Select an action: ".to_string()).await;
 
         match choice.as_str() {
             "1" => {
-                println!("Richiesta tragitto percorso al server...");
                 ask_period_and_send_analytics_request(tx, AnalyticsField::Path).await;
             }
 
             "2" => {
-                println!("Richiesta velocità media al server...");
                 ask_period_and_send_analytics_request(tx, AnalyticsField::AverageSpeed).await;
             }
 
             "3" => {
-                println!("Richiesta durata complessiva del movimento al server...");
                 ask_period_and_send_analytics_request(tx, AnalyticsField::MovementDuration).await;
             }
 
             "4" => {
-                println!("Richiesta durata complessiva delle pause al server...");
                 ask_period_and_send_analytics_request(tx, AnalyticsField::PauseDuration).await;
             }
             "5" => {
-                println!("\nMessage type:");
+                
+                print!("\x1B[2J\x1B[1;1H");
+                println!("--- Message type ---");
                 println!("1) Direct");
                 println!("2) Broadcast");
                 println!("3) Back");
+                println!("──────────────────────────────────────");
 
                 let msg_type = read_line_async("Select an option: ".to_string()).await;
 
@@ -308,10 +312,12 @@ pub async fn run_main_menu(tx: &mpsc::Sender<Outgoing>, username: &str) -> MenuA
                         let msg = Message::SendDirectMessage { to: recipient, text };
 
                         if tx.send(Outgoing::Chat(msg)).await.is_err() {
-
-                            eprintln!("Error: connection with writer task lost.");
-
+                            eprintln!("\x1b[31mError: connection with writer task lost.\x1b[0m");
+                        } else {
+                            println!("\x1b[32mMessage sent successfully!\x1b[0m");
                         }
+                        
+                        let _ = read_line_async("\n\x1b[33mPress Enter to continue...\x1b[0m".to_string()).await;
                     }
 
                     "2" => {
@@ -320,15 +326,20 @@ pub async fn run_main_menu(tx: &mpsc::Sender<Outgoing>, username: &str) -> MenuA
                         let msg = Message::SendBroadcastMessage { text };
 
                         if tx.send(Outgoing::Chat(msg)).await.is_err() {
-
-                            eprintln!("Error: connection with writer task lost.");
-
+                            eprintln!("\x1b[31mError: connection with writer task lost.\x1b[0m");
+                        } else {
+                            println!("\x1b[32mBroadcast message sent successfully!\x1b[0m");
                         }
+                        
+                        let _ = read_line_async("\n\x1b[33mPress Enter to continue...\x1b[0m".to_string()).await;
                     }
 
                     "3" => continue,
 
-                    _ => println!("Invalid option, returning to main menu."),
+                    _ => {
+                        println!("\x1b[33mInvalid option, returning to main menu.\x1b[0m");
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                    }
 
                 }
             }
@@ -336,12 +347,14 @@ pub async fn run_main_menu(tx: &mpsc::Sender<Outgoing>, username: &str) -> MenuA
             "6" => {
 
                 println!("Logging out...");
-
                 return MenuAction::Logout;
 
             }
             
-            _ => println!("Invalid choice, please try again."),
+            _ => {
+                println!("\x1b[33mInvalid choice, please try again.\x1b[0m");
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+            }
         }
     }
 }

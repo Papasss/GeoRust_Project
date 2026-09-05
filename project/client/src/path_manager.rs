@@ -5,10 +5,10 @@ use tokio::io::AsyncWriteExt;
 
 
 
-// Generates a text file containing random coordinates and timestamps.
-// It simulates a user moving or stopping with fixed 30-second intervals.
+// Genera un file di testo contenente posizioni geografiche random
 
 fn random_start_point(rng: &mut rand::rngs::ThreadRng) -> (f64, f64) {
+
     let min_latitude = 44.9;
     let max_latitude = 45.2;
     let min_longitude = 7.5;
@@ -20,7 +20,12 @@ fn random_start_point(rng: &mut rand::rngs::ThreadRng) -> (f64, f64) {
     (latitude, longitude)
 }
 
+
+
+// Calcola la nuova coordinata geografica
+
 fn move_point_by_meters(lat: f64, lon: f64, distance_m: f64, bearing_deg: f64) -> (f64, f64) {
+
     const EARTH_RADIUS_M: f64 = 6_371_000.0;
     let bearing = bearing_deg.to_radians();
     let angular_distance = distance_m / EARTH_RADIUS_M;
@@ -39,7 +44,12 @@ fn move_point_by_meters(lat: f64, lon: f64, distance_m: f64, bearing_deg: f64) -
     (lat2.to_degrees(), lon2.to_degrees())
 }
 
+
+
+// Crea un file e lo popola con le coordinate geografiche
+
 pub async fn create_random_path(file_path: &str) -> std::io::Result<()> {
+
     let mut file = File::create(file_path).await?;
     let mut rng = rand::thread_rng();
 
@@ -88,11 +98,11 @@ pub async fn ensure_user_path_exists(username: &str, user_dir: &str, file_path: 
     let path = Path::new(user_dir);
 
     if !path.exists() {
-        println!("\nCreating the user folder and path for {} ...", username);
+        println!("\nCreating the user folder and simulated path for \x1b[36m{}\x1b[0m...", username);
         fs::create_dir_all(path).await?;
         create_random_path(file_path).await?;
     } else {
-        println!("\nUser '{}' exists. Reading existing file...", username);
+        println!("\nUser '\x1b[36m{}\x1b[0m' exists. Reading existing route file...", username);
     }
 
     Ok(())

@@ -11,10 +11,10 @@ mod auth_flow;
 mod menu;
 
 
-
 #[tokio::main]
 async fn main() -> io::Result<()> {
 
+    print!("\x1B[2J\x1B[1;1H");
     println!("Starting Client application...");
 
     loop {
@@ -24,13 +24,13 @@ async fn main() -> io::Result<()> {
             Ok(s) => s,
 
             Err(e) => {
-                eprintln!("Failed to connect to server: {}", e);
+                eprintln!("\x1b[31mFailed to connect to server: {}\x1b[0m", e);
                 return Ok(());
             }
 
         };
 
-        println!("Connected to server!");
+        println!("\x1b[32mConnected to server!\x1b[0m");
 
         let username = auth_flow::register_and_login(&mut stream).await;
         let user_dir = format!("client/users/{}", username);
@@ -42,12 +42,12 @@ async fn main() -> io::Result<()> {
 
         if route.is_empty() {
 
-            println!("No positions found in {}", file_path);
+            println!("\x1b[33mNo positions found in {}\x1b[0m", file_path);
             return Ok(());
 
         }
 
-        println!("Initializing all communication sockets");
+        println!("Initializing all communication sockets...");
     
         // Avvio task di lettura. Si occupa di ricevere unicamente messaggi
         // diretti e di broadcast
@@ -64,7 +64,7 @@ async fn main() -> io::Result<()> {
         let writer_task = utils::spawn_writer_task(rx, write_half);
         let position_task = utils::spawn_position_task(route, tx_positions, username.clone());
         
-        println!("Communication channels initialized");
+        println!("\x1b[32mCommunication channels initialized.\x1b[0m");
 
         // Avvia il menu interattivo
 

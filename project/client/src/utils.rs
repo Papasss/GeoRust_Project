@@ -64,6 +64,7 @@ pub async fn read_line_async(prompt: String) -> String {
         io::stdin().read_line(&mut input).expect("Error reading input");
         
         input.trim().to_string()
+
     }).await.expect("Error in I/O Thread!")
 
 }
@@ -83,21 +84,22 @@ pub fn spawn_reader_task(mut reader: Lines<BufReader<OwnedReadHalf>>) -> JoinHan
                 match msg {
 
                     Message::IncomingDirectMessage { from, text } => {
-                        println!("\n[Private message from {}]: {}", from, text);
+                        println!("\n[\x1b[36mPrivate message from {}\x1b[0m]: {}", from, text);
                     }
 
                     Message::IncomingBroadcastMessage { from, text } => {
-                        println!("\n[Broadcast from {}]: {}", from, text);
+                        println!("\n[\x1b[33mBroadcast from {}\x1b[0m]: {}", from, text);
                     }
 
                     Message::AnalyticsResponse(response) => {
-                        println!("\n=== Risultato analytics ===");
-                        println!("{response}");
-                        println!("===========================\n");
+                        println!("\n\x1b[32m╔════════════════════════════════════╗\x1b[0m");
+                        println!("\x1b[32m║         ANALYTICS RESULT           ║\x1b[0m");
+                        println!("\x1b[32m╚════════════════════════════════════╝\x1b[0m");
+                        println!("{response}\n");
                     }
 
                     Message::AnalyticsErr(error) => {
-                        eprintln!("\nErrore analytics: {error}\n");
+                        eprintln!("\n\x1b[31mAnalytics Error:\x1b[0m {error}\n");
                     }
 
                     _ => {} 
@@ -149,7 +151,7 @@ pub fn spawn_position_task(route: Vec<UpdatePosition>, tx: mpsc::Sender<Outgoing
             }
         }
 
-        println!("\nRoute completed for user {}.", username);
+        println!("\n\x1b[32mRoute completed for user {}.\x1b[0m", username);
 
     })
 }
