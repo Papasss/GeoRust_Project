@@ -367,6 +367,9 @@ async fn disconnect_client(username: &str, state: &Arc<Mutex<ServerState>>, writ
     
     let mut server_state_lock = state.lock().await;
     
+    if let Some(tracker) = server_state_lock.users.get_mut(username) {
+        tracker.set_disconnected();
+    }
     server_state_lock.logout(username);
     drop(server_state_lock);
     

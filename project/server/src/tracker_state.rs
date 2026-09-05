@@ -3,6 +3,9 @@ use serde::{Serialize, Deserialize};
 use shared::coordinates::Coordinates;
 use shared::update_position::UpdatePosition;
 use shared::user_state::UserState;
+use crate::analytics::{AnalyticsConfig, haversine_distance_km};
+
+const MOVEMENT_THRESHOLD_METERS: f64 = 1.0;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackerState {
@@ -11,6 +14,8 @@ pub struct TrackerState {
     state: UserState,
     last_move: Option<DateTime<chrono::Utc>>,
     history: Vec<UpdatePosition>,
+    movement_threshold: f64,
+    pause_threshold_secs: i64,
     
 }
 
@@ -21,11 +26,15 @@ impl TrackerState {
     // Inizializzazione.
 
     pub fn new() -> Self {
+        let default_config = AnalyticsConfig::default();
+
         TrackerState {
             last_coordinates: None,
             state: UserState::Sconnesso,
             last_move: None,
             history: Vec::new(),
+            movement_threshold: default_config.movement_threshold_meters,
+            pause_threshold_secs: default_config.pause_threshold.as_secs() as i64
         }
     }
 
@@ -55,8 +64,12 @@ impl TrackerState {
 
     // Ho aggiunto
     pub fn get_history(&self) -> &Vec<UpdatePosition> {
-    &self.history
-}
+        &self.history
+    }
+
+    pub fn set_disconnected(&mut self) {
+        self.state = UserState::Sconnesso;
+    }
 
     pub fn update_position(&mut self, new_update: &UpdatePosition) {
 
@@ -77,7 +90,14 @@ impl TrackerState {
 
             Some(last_coordinates) => {
 
-                if last_coordinates.get_latitude() != new_coordinates.get_latitude() || last_coordinates.get_longitude() != new_coordinates.get_longitude() {
+                let distance_m = haversine_distance_km(
+                    last_coordinates.get_latitude(),
+                    last_coordinates.get_longitude(),
+                    new_coordinates.get_latitude(),
+                    new_coordinates.get_longitude(),
+                ) * 1000.0;
+
+                if distance_m > self.movement_threshold {
                     
                     if !matches!(&self.state, UserState::InMovimento) {
 
@@ -97,7 +117,7 @@ impl TrackerState {
 
                             let duration = new_time.signed_duration_since(last_move_time);
 
-                            if duration.num_seconds() >= 180 {
+                            if duration.num_seconds() >= self.pause_threshold_secs {
 
                                 println!("[{}] Transizione: IN MOVIMENTO -> FERMO (sosta di {} sec)",
                                     new_update.username, duration.num_seconds());
