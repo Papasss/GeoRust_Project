@@ -5,8 +5,6 @@ use shared::update_position::UpdatePosition;
 use shared::user_state::UserState;
 use crate::analytics::{AnalyticsConfig, haversine_distance_km};
 
-const MOVEMENT_THRESHOLD_METERS: f64 = 1.0;
-
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TrackerState {
 
