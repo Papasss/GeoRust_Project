@@ -4,6 +4,9 @@ use std::io::ErrorKind;
 use tokio::fs;
 use bcrypt::{hash, verify, DEFAULT_COST};
 
+const MIN_USERNAME_LEN: usize = 3;
+const MAX_USERNAME_LEN: usize = 20;
+
 #[derive(Debug)]
 pub enum AuthError {
 
@@ -42,6 +45,20 @@ fn hash_password(password: &str) -> String {
 fn verify_password(password: &str, hashed: &str) -> bool {
     
     verify(password, hashed).unwrap_or(false)
+
+}
+
+fn is_valid_username(username: &str) -> bool {
+
+    let len = username.chars().count();
+
+    if len < MIN_USERNAME_LEN || len > MAX_USERNAME_LEN {
+        return false;
+    }
+
+    //si escludono caratteri particolari
+    username.chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
 
 }
 
@@ -96,6 +113,13 @@ impl ServerState {
 
     pub fn register(&mut self, username: &str, password: &str) -> Result<(), AuthError> {
 
+        if !is_valid_username(username){
+            
+            return Err(AuthError::InvalidUsername);
+
+
+        }
+        
         if username.trim().is_empty() {
 
             return Err(AuthError::InvalidUsername);

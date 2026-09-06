@@ -12,6 +12,7 @@ pub struct ServerState {
     pub connections: HashMap<String, mpsc::Sender<Message>>,
     pub accounts: HashMap<String, String>,
     pub users: HashMap<String, TrackerState>,
+    
     accounts_file_path: PathBuf,
 }
 
@@ -41,10 +42,18 @@ impl ServerState {
     }
 
 
-    // Attiva lo stato online inserendo il client appena loggato nella mappa.
+    // Controlla se l'utente è già online, attiva lo stato online inserendo il client appena loggato nella mappa.
 
-    pub fn login(&mut self, username: &str, sender: mpsc::Sender<Message>) {
+    pub fn try_login(&mut self, username: &str, sender: mpsc::Sender<Message>)-> Result<(), String> {
+        
+        if self.connections.contains_key(username){
+
+            return Err(format!("Sessione già attiva di '{}'", username));
+
+
+        }
         self.connections.insert(username.to_string(), sender);
+        Ok(())
     }
 
 
@@ -55,14 +64,6 @@ impl ServerState {
         self.connections.remove(username);
     }
 
-
-
-    // Controlla rapidamente all'interno della mappa delle chiavi di connessione
-    // se lo specifico utente è segnato come correntemente online nel sistema.
-
-    pub fn is_online(&self, username: &str) -> bool {
-        self.connections.contains_key(username) 
-    }
 
     //salvataggio account
     pub async fn save_accounts(&self) -> io::Result<()> {
