@@ -132,24 +132,37 @@ pub fn spawn_writer_task(mut rx: mpsc::Receiver<Outgoing>, mut write_half: Owned
 // Esegue l'invio temporizzato delle coordinate geografiche dell'utente ogni
 // 30 secondi.
 
-pub fn spawn_position_task(route: Vec<UpdatePosition>, tx: mpsc::Sender<Outgoing>, username: String) -> JoinHandle<()> {
+pub fn spawn_position_task(
+    file_path: String,
+    tx: mpsc::Sender<Outgoing>,
+    username: String,
+) -> JoinHandle<()> {
 
     tokio::spawn(async move {
+        let mut previous_position = None;
 
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
-        
-        for update in route {
+        loop {
+            tokio::time::sleep(Duration::from_secs(30)).await;
 
-            interval.tick().await;
+            let position = match crate::path_manager::append_random_position(
+                &file_path,
+                &username,
+                previous_position,
+            )
+            .await
+            {
+                Ok(position) => position,
+                Err(error) => {
+                    eprintln!("Unable to save position: {error}");
+                    break;
+                }
+            };
 
-            if tx.send(Outgoing::Position(update)).await.is_err() {
-
+            previous_position = Some(position.0);
+            if tx.send(Outgoing::Position(position.1)).await.is_err() {
                 break;
-
             }
         }
-
-        println!("\nRoute completed for user {}.", username);
 
     })
 }

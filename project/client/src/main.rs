@@ -2,7 +2,6 @@ use std::io;
 use tokio::io::AsyncBufReadExt;
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
-use utils::load_user_path;
 
 
 pub mod utils;
@@ -38,15 +37,6 @@ async fn main() -> io::Result<()> {
 
         path_manager::ensure_user_path_exists(&username, &user_dir, &file_path).await?;
 
-        let route = load_user_path(&file_path, &username).await?;
-
-        if route.is_empty() {
-
-            println!("No positions found in {}", file_path);
-            return Ok(());
-
-        }
-
         println!("Initializing all communication sockets");
     
         // Avvio task di lettura. Si occupa di ricevere unicamente messaggi
@@ -62,7 +52,7 @@ async fn main() -> io::Result<()> {
         let tx_positions = tx.clone();
 
         let writer_task = utils::spawn_writer_task(rx, write_half);
-        let position_task = utils::spawn_position_task(route, tx_positions, username.clone());
+        let position_task = utils::spawn_position_task(file_path, tx_positions, username.clone());
         
         println!("Communication channels initialized");
 

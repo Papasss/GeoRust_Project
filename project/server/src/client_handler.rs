@@ -109,6 +109,19 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
                 match auth_result {
 
                     Ok(()) => {
+                        match ServerState::load_user_history(&username).await {
+                            Ok(history) => {
+                                let mut server_state_lock = state.lock().await;
+                                server_state_lock.restore_user_history(&username, history);
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "[SERVER] Unable to load coordinates for {}: {}",
+                                    username, error
+                                );
+                            }
+                        }
+
                         let _ = send_packet(&mut *write_half, &Message::LoginOk).await;
                         return Some(username);
                     }
@@ -205,7 +218,15 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
             let mut server_state_lock = state.lock().await;
 
-            server_state_lock.process_packet(update_position);
+            server_state_lock.process_packet(update_position.clone());
+            drop(server_state_lock);
+
+            if let Err(error) = ServerState::save_position(username, &update_position).await {
+                eprintln!(
+                    "[SERVER] Unable to save coordinates for {}: {}",
+                    username, error
+                );
+            }
             continue;
 
         }
@@ -369,6 +390,9 @@ async fn disconnect_client(username: &str, state: &Arc<Mutex<ServerState>>, writ
     
     let mut server_state_lock = state.lock().await;
     
+    if let Some(tracker) = server_state_lock.users.get_mut(username) {
+        tracker.set_disconnected();
+    }
     server_state_lock.logout(username);
     drop(server_state_lock);
     

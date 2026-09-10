@@ -1,3 +1,10 @@
+use std::{collections::HashMap, time::Duration};
+use chrono::DateTime;
+use tokio::sync::mpsc;
+use tokio::time::interval;
+use tokio::fs::OpenOptions;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use shared::{coordinates::Coordinates, messages::Message, parse_values};
 use std::{collections::HashMap, time::Duration, path::{PathBuf, Path}, io,};
 use tokio::sync::mpsc;
 use tokio::time::interval;
@@ -216,5 +223,68 @@ impl ServerState {
             .or_insert_with(TrackerState::new);
 
         tracker.update_position(&packet);
+    }
+
+    pub async fn load_user_history(username: &str) -> std::io::Result<Vec<UpdatePosition>> {
+        let file_path = format!("server/data/{username}/route.txt");
+        let file = match tokio::fs::File::open(file_path).await {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        };
+
+        let mut history = Vec::new();
+        let mut lines = BufReader::new(file).lines();
+
+        while let Some(line) = lines.next_line().await? {
+            let values = parse_values(&line);
+            if values.len() < 3 {
+                continue;
+            }
+
+            let time = DateTime::parse_from_rfc3339(&values[2])
+                .map(|time| time.with_timezone(&chrono::Utc))
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+
+            history.push(UpdatePosition {
+                username: username.to_string(),
+                coordinates: Coordinates::new(values[0].clone(), values[1].clone(), time.timestamp()),
+                time,
+            });
+        }
+
+        Ok(history)
+    }
+
+    pub fn restore_user_history(&mut self, username: &str, history: Vec<UpdatePosition>) {
+        if self.users.contains_key(username) {
+            return;
+        }
+
+        for position in history {
+            self.process_packet(position);
+        }
+    }
+
+    pub async fn save_position(username: &str, packet: &UpdatePosition) -> std::io::Result<()> {
+        let user_dir = format!("server/data/{username}");
+        tokio::fs::create_dir_all(&user_dir).await?;
+
+        let file_path = format!("{user_dir}/route.txt");
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_path)
+            .await?;
+
+        let row = format!(
+            "{},{},{}\n",
+            packet.coordinates.get_latitude(),
+            packet.coordinates.get_longitude(),
+            packet.time.to_rfc3339()
+        );
+
+        file.write_all(row.as_bytes()).await?;
+        file.flush().await
     }
 }
