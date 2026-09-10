@@ -19,10 +19,8 @@ async fn main() {
     println!("Starting Control Server...");
 
     let mut initial_state = ServerState::new();
-    let accounts_path = "server/data/accounts.json"; 
     
-    
-    initial_state.load_accounts(accounts_path).await;
+    initial_state.load_accounts().await;
     
     let state = Arc::new(Mutex::new(initial_state));
 
