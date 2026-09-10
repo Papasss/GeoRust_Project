@@ -119,13 +119,6 @@ impl ServerState {
 
 
         }
-        
-        if username.trim().is_empty() {
-
-            return Err(AuthError::InvalidUsername);
-        
-
-        }
 
         if password.len() < 6 {
 
