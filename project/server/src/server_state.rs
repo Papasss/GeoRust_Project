@@ -1,16 +1,10 @@
-use std::{collections::HashMap, time::Duration};
+use std::{collections::HashMap, time::Duration, path::{PathBuf, Path}, io,};
 use chrono::DateTime;
 use tokio::sync::mpsc;
 use tokio::time::interval;
-use tokio::fs::OpenOptions;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use shared::{coordinates::Coordinates, messages::Message, parse_values};
-use std::{collections::HashMap, time::Duration, path::{PathBuf, Path}, io,};
-use tokio::sync::mpsc;
-use tokio::time::interval;
 use tokio::fs::{self, OpenOptions};
-use tokio::io::AsyncWriteExt;
-use shared::messages::Message;
 use cpu_time::ProcessTime;
 use shared::update_position::UpdatePosition;
 use crate::tracker_state::TrackerState;
