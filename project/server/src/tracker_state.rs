@@ -60,7 +60,6 @@ impl TrackerState {
         &self.last_move
     }
 
-    // Ho aggiunto
     pub fn get_history(&self) -> &Vec<UpdatePosition> {
         &self.history
     }
