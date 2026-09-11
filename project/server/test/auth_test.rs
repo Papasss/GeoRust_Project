@@ -1,3 +1,4 @@
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -54,6 +55,78 @@ mod tests {
         // ma l'autenticazione deve comunque funzionare per entrambi
         assert!(state.authenticate("user1", "samepw123").is_ok());
         assert!(state.authenticate("user2", "samepw123").is_ok());
+    }
+
+    //Validazione username: lunghezza 
+
+    #[test]
+    fn test_register_username_too_short_fails() {
+        let mut state = setup_state();
+        let result = state.register("ab", "password123"); // 2 caratteri, sotto il minimo di 3
+        assert!(matches!(result, Err(AuthError::InvalidUsername)));
+    }
+
+    #[test]
+    fn test_register_username_minimum_length_succeeds() {
+        let mut state = setup_state();
+        let result = state.register("abc", "password123"); // esattamente 3 caratteri
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_register_username_maximum_length_succeeds() {
+        let mut state = setup_state();
+        let username = "a".repeat(20); // esattamente 20 caratteri
+        let result = state.register(&username, "password123");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_register_username_too_long_fails() {
+        let mut state = setup_state();
+        let username = "a".repeat(21); // 21 caratteri, sopra il massimo
+        let result = state.register(&username, "password123");
+        assert!(matches!(result, Err(AuthError::InvalidUsername)));
+    }
+
+    //Validazione username: caratteri ammessi 
+
+    #[test]
+    fn test_register_username_with_special_characters_fails() {
+        let mut state = setup_state();
+        let result = state.register("alice!", "password123");
+        assert!(matches!(result, Err(AuthError::InvalidUsername)));
+    }
+
+    #[test]
+    fn test_register_username_with_spaces_fails() {
+        let mut state = setup_state();
+        let result = state.register("al ice", "password123");
+        assert!(matches!(result, Err(AuthError::InvalidUsername)));
+    }
+
+    #[test]
+    fn test_register_username_with_underscore_and_hyphen_succeeds() {
+        let mut state = setup_state();
+        let result = state.register("al_ice-99", "password123");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_register_username_with_accented_characters_fails() {
+        let mut state = setup_state();
+        let result = state.register("élena", "password123");
+        assert!(matches!(result, Err(AuthError::InvalidUsername)));
+    }
+
+    // Comportamento case-sensitive (documentativo, non un bug) 
+
+    #[test]
+    fn test_register_username_is_case_sensitive() {
+        let mut state = setup_state();
+        state.register("Alice", "password123").unwrap();
+        let result = state.register("alice", "password456");
+        assert!(result.is_ok()); // sono considerati utenti distinti
     }
 
     //Login / autenticazione
@@ -210,14 +283,14 @@ mod tests {
     }
 
     //Stato online/offline (login/logout su ServerState) 
-
     #[tokio::test]
-    async fn test_login_marks_user_as_online() {
+    async fn test_try_login_marks_user_as_online() {
         let mut state = setup_state();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        state.login("grace", tx);
-        assert!(state.is_online("grace"));
+        let result = state.try_login("grace", tx);
+        assert!(result.is_ok());
+        assert!(state.connections.contains_key("grace"));
     }
 
     #[tokio::test]
@@ -225,14 +298,42 @@ mod tests {
         let mut state = setup_state();
         let (tx, _rx) = tokio::sync::mpsc::channel(8);
 
-        state.login("henry", tx);
+        state.try_login("henry", tx).unwrap();
         state.logout("henry");
-        assert!(!state.is_online("henry"));
+        assert!(!state.connections.contains_key("henry"));
     }
 
     #[tokio::test]
-    async fn test_is_online_false_for_unknown_user() {
+    async fn test_unknown_user_not_in_connections() {
         let state = setup_state();
-        assert!(!state.is_online("nessuno"));
+        assert!(!state.connections.contains_key("nessuno"));
+    }
+
+    #[tokio::test]
+    async fn test_try_login_twice_same_user_fails() {
+        let mut state = setup_state();
+        let (tx1, _rx1) = tokio::sync::mpsc::channel(8);
+        let (tx2, _rx2) = tokio::sync::mpsc::channel(8);
+
+        let first = state.try_login("ivan", tx1);
+        assert!(first.is_ok());
+
+        let second = state.try_login("ivan", tx2);
+        assert!(second.is_err());
+
+        assert!(state.connections.contains_key("ivan"));
+    }
+
+    #[tokio::test]
+    async fn test_try_login_after_logout_succeeds() {
+        let mut state = setup_state();
+        let (tx1, _rx1) = tokio::sync::mpsc::channel(8);
+        let (tx2, _rx2) = tokio::sync::mpsc::channel(8);
+
+        state.try_login("julia", tx1).unwrap();
+        state.logout("julia");
+
+        let result = state.try_login("julia", tx2);
+        assert!(result.is_ok());
     }
 }

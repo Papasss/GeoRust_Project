@@ -26,14 +26,14 @@ pub async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
     let (read_half, mut write_half) = socket.into_split();
     let mut reader = BufReader::new(read_half).lines();
 
-    let username = match authenticate_client(&mut reader, &mut write_half, &state).await {
-        Some(name) => name,
+    let (username, rx) = match authenticate_client(&mut reader, &mut write_half, &state).await {
+        Some(pair) => pair,
         None => return,
     };
 
-    println!("\t\t\t\tUser authenticated successfully: {username}");
+    println!("\t\t\t\tAutenticazione utente: {username}, avvennuta con successo ");
 
-    let writer_task = setup_active_session(&username, write_half, &state).await;
+    let writer_task = setup_active_session(write_half, rx).await;
 
     process_client_messages(&mut reader, &state, &username).await;
 
@@ -43,8 +43,9 @@ pub async fn handle_client(socket: TcpStream, state: Arc<Mutex<ServerState>>) {
 
 
 // Registrazione e/o login del client.
+// Inizializza il canale per mantenere aperta la comunicazione in uscita.
 
-async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write_half: &mut OwnedWriteHalf, state: &Arc<Mutex<ServerState>>) -> Option<String> {
+async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write_half: &mut OwnedWriteHalf, state: &Arc<Mutex<ServerState>>) -> Option<(String, mpsc::Receiver<Message>)> {
     
     loop {
 
@@ -89,24 +90,24 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
 
             Message::Login { username, password } => {
 
-                let server_state_lock = state.lock().await;
+                let mut server_state_lock = state.lock().await;
 
-                if server_state_lock.is_online(&username) {
+                if let Err(e) = server_state_lock.authenticate(&username, &password) {
 
                     drop(server_state_lock);
 
-                    let _ = send_packet(&mut *write_half, &Message::LoginErr(
-                        format!("Session already active for '{}'", username)
-                    )).await;
+                    let _ = send_packet(&mut *write_half, &Message::LoginErr(e.to_string())).await;
                     continue;
 
                 }
-
-                let auth_result = server_state_lock.authenticate(&username, &password);
                 
+                let (tx, rx)= mpsc::channel::<Message>(32);
+                
+                let login_result = server_state_lock.try_login(&username, tx);
+
                 drop(server_state_lock);
 
-                match auth_result {
+                match login_result {
 
                     Ok(()) => {
                         match ServerState::load_user_history(&username).await {
@@ -123,18 +124,18 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
                         }
 
                         let _ = send_packet(&mut *write_half, &Message::LoginOk).await;
-                        return Some(username);
+                        return Some((username, rx));
                     }
 
-                    Err(e) => {
-                        let _ = send_packet(&mut *write_half, &Message::LoginErr(e.to_string())).await;
+                    Err(msg) => {
+                        let _ = send_packet(&mut *write_half, &Message::LoginErr(msg)).await;
                     }
                 }
             }
 
             _ => {
                 let _ = send_packet(&mut *write_half, &Message::LoginErr(
-                    "You must log in first".to_string()
+                    "Devi prima eseguire il login.".to_string()
                 )).await;
             }
         }
@@ -143,17 +144,9 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
 
 
 
-// Inizializza il canale per mantenere aperta la comunicazione in uscita.
 // Avvia un task in background che attende i messaggi.
 
-async fn setup_active_session(username: &str, mut write_half: OwnedWriteHalf, state: &Arc<Mutex<ServerState>>) -> JoinHandle<()> {
-    
-    let (tx, mut rx) = mpsc::channel::<Message>(32);
-
-    {
-        let mut server_state_lock = state.lock().await;
-        server_state_lock.login(username, tx);
-    }
+async fn setup_active_session(mut write_half: OwnedWriteHalf, mut rx: mpsc::Receiver<Message>) -> JoinHandle<()> {
 
     tokio::spawn(async move {
 

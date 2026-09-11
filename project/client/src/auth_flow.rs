@@ -19,16 +19,15 @@ fn read_password(prompt: &str) -> String {
 
 // Attende la risposta di registrazione / login in arrivo dal server
 
-async fn read_response(stream: &mut TcpStream) -> Option<Message> {
+async fn read_response(reader: &mut BufReader<&mut TcpStream>) -> Option<Message> {
 
-    let mut reader = BufReader::new(stream);
     let mut line = String::new();
-
+ 
     match reader.read_line(&mut line).await {
-
-        Ok(0) | Err(_) => None, 
+ 
+        Ok(0) | Err(_) => None,
         Ok(_) => serde_json::from_str(line.trim()).ok(),
-
+ 
     }
 }
 
@@ -37,6 +36,8 @@ async fn read_response(stream: &mut TcpStream) -> Option<Message> {
 // Gestisce l'intero ciclo di registrazione e login dell'utente.
 
 pub async fn register_and_login(stream: &mut TcpStream) -> String {
+
+    let mut reader = BufReader::new(stream);
 
     loop {
 
@@ -53,9 +54,9 @@ pub async fn register_and_login(stream: &mut TcpStream) -> String {
 
                 let username = read_line_async("Username: ".to_string()).await;
                 let password = read_password("Password: ");
-                let _ = send_packet(stream, &Message::Register { username, password }).await;
-
-                match read_response(stream).await {
+                let _ = send_packet(reader.get_mut(), &Message::Register { username, password }).await;
+                
+                match read_response(&mut reader).await {
 
                     Some(Message::RegisterOk) => {
                         println!("Registration successful! You can now log in.");
@@ -78,9 +79,9 @@ pub async fn register_and_login(stream: &mut TcpStream) -> String {
 
                 let username = read_line_async("Username: ".to_string()).await;
                 let password = read_password("Password: ");
-                let _ = send_packet(stream, &Message::Login { username: username.clone(), password }).await;
+                let _ = send_packet(reader.get_mut(), &Message::Login { username: username.clone(), password }).await;
 
-                match read_response(stream).await {
+                match read_response(&mut reader).await {
 
                     Some(Message::LoginOk) => {
                         println!("Login successful! Welcome, {}.", username);
