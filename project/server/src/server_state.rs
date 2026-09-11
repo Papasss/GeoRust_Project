@@ -195,6 +195,7 @@ impl ServerState {
     pub async fn start_log_cpu_usage() {
 
         let mut timer = interval(Duration::from_secs(120));
+        let mut last_cpu_time = Self::get_cpu_time().unwrap_or(Duration::ZERO);
 
         tokio::spawn(async move {
 
@@ -204,7 +205,10 @@ impl ServerState {
 
                 if let Some(cpu_duration) = Self::get_cpu_time() {
 
-                    if let Err(err) = Self::write_cpu_usage(cpu_duration).await {
+                    let delta_cpu = cpu_duration.saturating_sub(last_cpu_time).as_secs_f64();
+                    let cpu_percent = (delta_cpu / 120.0) * 100.0;
+
+                    if let Err(err) = Self::write_cpu_usage(cpu_duration.as_secs_f64(), cpu_percent).await {
                         
                         error!("[MONITOR]\tError saving CPU logs: {}", err);
                     
@@ -213,6 +217,9 @@ impl ServerState {
                         info!("[MONITOR]\tPerformance metrics saved to file");
                     
                     }
+
+                    last_cpu_time = cpu_duration;
+
                 }
             }
         });
@@ -231,27 +238,36 @@ impl ServerState {
     // Ritorna il percorso logicamente corretto basandosi sul sistema operativo.
     
     #[cfg(target_os = "windows")]
-    fn get_log_dir() -> &'static str { "server/logs/windows" }
+    fn get_log_dir() -> &'static str { "logs/windows" }
     #[cfg(target_os = "macos")]
-    fn get_log_dir() -> &'static str { "server/logs/macos" }
+    fn get_log_dir() -> &'static str { "logs/macos" }
     #[cfg(target_os = "linux")]
-    fn get_log_dir() -> &'static str { "server/logs/linux" }
+    fn get_log_dir() -> &'static str { "logs/linux" }
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    fn get_log_dir() -> &'static str { "server/logs/other" }
+    fn get_log_dir() -> &'static str { "logs/other" }
 
 
 
     // Scrive materialmente l'utilizzo della CPU sul log di testo
 
-    async fn write_cpu_usage(cpu_time: Duration) -> Result<(), std::io::Error> {
+    async fn write_cpu_usage(cpu_time: f64, cpu_percent: f64) -> Result<(), std::io::Error> {
         
         let path = Self::get_log_dir();
+        let log_dir = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), path);
+        
+        
+        tokio::fs::create_dir_all(&log_dir).await?;
 
-        fs::create_dir_all(path).await?;
-
-        let mut file = OpenOptions::new().create(true).append(true).open(format!("{path}/cpu_performance.log")).await?;
+        let file_path = format!("{log_dir}/cpu_performance.log");
+        let mut file = OpenOptions::new().create(true).append(true).open(file_path).await?;
         let timestamp = chrono::Local::now().format("%Y-%m-%d %H:%M:%S");
-        let log_line = format!("[{}] Server CPU time: {:.6} s\n", timestamp, cpu_time.as_secs_f64());
+        let log_line = format!(
+            "[{}] [PID: {}] Server CPU usage: {:.6} {:.6}%\n", 
+            timestamp, 
+            std::process::id(), 
+            cpu_time,
+            cpu_percent
+        );
         
         file.write_all(log_line.as_bytes()).await?;
         file.flush().await?;
