@@ -31,20 +31,8 @@ pub enum MenuAction {
 }
 
 
-// per gli altri: caratteri di escape:
-//
-// - \x1B[2J\x1B[1;1H => utilizzata per pulire lo schermo del terminale 
-//   spostare il cursore in alto a sinistra.
-//
-// - \x1b[31m => che cambia il colore del testo del terminale in rosso
-//
-// - \x1b[33m => verde
-
 
 // Menu principale post-login.
-// Chiede all'utente su quale periodo vuole fare l'analisi.
-// Ritorna Some(period) se l'utente sceglie un periodo valido.
-// Ritorna None se l'utente decide di tornare al menu principale.
 
 async fn choose_analytics_period() -> Option<AnalyticsPeriodMessage> {
 
@@ -104,9 +92,6 @@ async fn choose_analytics_period() -> Option<AnalyticsPeriodMessage> {
 
 
 // Permette all'utente di inserire un intervallo temporale personalizzato.
-// Se l'utente inserisce solo la data:
-// - la data iniziale viene interpretata come 00:00:00;
-// - la data finale viene interpretata come 23:59:59.
 
 async fn read_custom_period() -> Option<AnalyticsPeriodMessage> {
 
@@ -223,7 +208,6 @@ fn local_datetime_to_timestamp(datetime: NaiveDateTime) -> Option<i64> {
 
 
 // Funzione unificata per non ripetere la scelta del periodo.
-// Mette in pausa l'interfaccia utente in attesa del risultato dal task di lettura.
 
 async fn ask_period_and_send_analytics_request(
     tx: &mpsc::Sender<Outgoing>,
@@ -241,15 +225,13 @@ async fn ask_period_and_send_analytics_request(
                 let _ = read_line_async("\n\x1b[33mPress Enter to return to the main menu...\x1b[0m".to_string()).await;
             } else {
                 
-                // L'interfaccia si ferma qui. Nel frattempo, il task di background riceve 
-                // e stampa i risultati di Analytics a schermo senza che il menù lo copra.
                 println!("\n\x1b[36mWaiting for server response...\x1b[0m");
                 let _ = read_line_async("\n\x1b[33mPress Enter to return to the main menu...\x1b[0m".to_string()).await;
                 
             }
         }
 
-        None => {} // L'utente ha scelto "Back", il ciclo riprende immediatamente
+        None => {} 
     }
 }
 

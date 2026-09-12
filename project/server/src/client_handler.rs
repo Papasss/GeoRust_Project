@@ -2,7 +2,7 @@ use std::sync::Arc;
 use log::{info, error, warn};
 use shared::coordinates::Coordinates;
 use shared::send_packet;
-use tokio::io::{AsyncBufReadExt, BufReader, Lines};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc;
@@ -17,7 +17,11 @@ use crate::analytics::{
 
 
 
-// Rappresenta l'intero ciclo di vita di un client connesso al server.
+// Gestisce l'intero ciclo di vita di un client connesso al server:
+
+// 1. Autenticazione (login o registrazione).
+// 2. Sessione attiva (task di scrittura e ascolto messaggi).
+// 3. Disconnessione e pulizia delle risorse.
 
 pub async fn handle_client(socket: TcpStream, state: Arc<ServerState>) {
 
@@ -40,7 +44,9 @@ pub async fn handle_client(socket: TcpStream, state: Arc<ServerState>) {
 
 
 
-// Gestisce la registrazione o il login del client aprendo il canale di comunicazione.
+// Questa funzione gestisce la fase iniziale in cui il client deve farsi riconoscere.
+// Legge i pacchetti in arrivo e interroga lo stato centrale per registrare o loggare l'utente.
+// In caso di login riuscito, recupera lo storico salvato su disco e inizializza il canale di memoria.
 
 async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write_half: &mut OwnedWriteHalf, state: &Arc<ServerState>) -> Option<(String, mpsc::Receiver<Message>)> {
     
@@ -102,9 +108,19 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
                 match login_result {
 
                     Ok(()) => {
+                        match ServerState::load_user_history(&username).await {
+                            Ok(history) => {
+                                state.restore_user_history(&username, history).await;
+                            }
+                            Err(error) => {
+                                error!("[ERROR]\t\tUnable to load coordinates for {}: {}", username, error);
+                            }
+                        }
+
                         let _ = send_packet(&mut *write_half, &Message::LoginOk).await;
                         return Some((username, rx));
                     }
+
                     Err(msg) => {
                         let _ = send_packet(&mut *write_half, &Message::LoginErr(msg)).await;
                     }
@@ -120,15 +136,18 @@ async fn authenticate_client(reader: &mut Lines<BufReader<OwnedReadHalf>>, write
 
 
 
-// Avvia un task in background che attende i messaggi da spedire al client.
+// Resta costantemente in attesa di messaggi depositati nel canale mpsc.
 
-async fn setup_active_session(mut write_half: OwnedWriteHalf, mut rx: mpsc::Receiver<Message>) -> JoinHandle<()> {
-    
+async fn setup_active_session(write_half: OwnedWriteHalf, mut rx: mpsc::Receiver<Message>) -> JoinHandle<()> {
+
     tokio::spawn(async move {
+        
+        let mut buffered_writer = BufWriter::new(write_half);
 
         while let Some(msg) = rx.recv().await {
 
-            let _ = send_packet(&mut write_half, &msg).await;
+            let _ = send_packet(&mut buffered_writer, &msg).await;
+            let _ = buffered_writer.flush().await; 
 
         }
     })
@@ -136,7 +155,8 @@ async fn setup_active_session(mut write_half: OwnedWriteHalf, mut rx: mpsc::Rece
 
 
 
-// Smista i comandi in arrivo dal client elaborando messaggi e coordinate.
+// Preleva le richieste di analisi, i messaggi di chat e le nuove coordinate geografiche
+// inviate dal client, spostando l'elaborazione allo stato centrale del server.
 
 async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, state: &Arc<ServerState>, username: &str) {
 
@@ -191,7 +211,12 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
                 update_position.time
             );
 
+            if let Err(error) = ServerState::save_position(username, &update_position).await {
+                error!("[ERROR]\t\tUnable to save coordinates for {}: {}", username, error);
+            }
+
             state.process_packet(update_position).await;
+            
             continue;
         }
 
@@ -201,7 +226,7 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
 
 
-// Invia un pacchetto a uno specifico utente utilizzando il canale salvato nello stato.
+// Permette di far recapitare un pacchetto specifico a un utente loggato.
 
 async fn send_to_logged_user(username: &str, msg: Message, state: &Arc<ServerState>) {
 
@@ -211,6 +236,7 @@ async fn send_to_logged_user(username: &str, msg: Message, state: &Arc<ServerSta
         connections.get(username).cloned()
 
     };
+    
     if let Some(tx) = tx {
 
         let _ = tx.send(msg).await;
@@ -220,7 +246,8 @@ async fn send_to_logged_user(username: &str, msg: Message, state: &Arc<ServerSta
 
 
 
-// Converte il periodo temporale ricevuto dal client nel tipo interno usato dall'analizzatore.
+// Converte l'intervallo temporale scelto dall'utente nel formato interno di 
+// enumerazione richiesto dal motore di statistica (Analytics).
 
 fn convert_period(period: AnalyticsPeriodMessage) -> AnalysisPeriod {
 
@@ -239,7 +266,8 @@ fn convert_period(period: AnalyticsPeriodMessage) -> AnalysisPeriod {
 
 
 
-// Formatta le statistiche di movimento in una risposta testuale leggibile.
+// Trasforma i risultati numerici calcolati dal server in una stringa di testo.
+
 fn format_analytics_response(field: AnalyticsField, stats: &MovementStatistics) -> String {
     
     match field {
@@ -277,7 +305,7 @@ fn format_analytics_response(field: AnalyticsField, stats: &MovementStatistics) 
 
 
 
-// Genera ed elabora la richiesta di statistiche storiche per l'utente.
+// Gestione di una richiesta di analytics
 
 async fn handle_analytics_request(username: &str, field: AnalyticsField, period: AnalyticsPeriodMessage, state: &Arc<ServerState>) -> Message {
 
@@ -310,7 +338,7 @@ async fn handle_analytics_request(username: &str, field: AnalyticsField, period:
 
 
 
-// Rimuove la sessione utente e abortisce i processi di invio attivi.
+// Termina la connessione dal client.
 
 async fn disconnect_client(username: &str, state: &Arc<ServerState>, writer_task: JoinHandle<()>) {
 

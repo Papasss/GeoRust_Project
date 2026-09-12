@@ -53,8 +53,11 @@ async fn main() {
     info!("[SERVER]\tListening on 127.0.0.1:8080");
 
     loop {
+        
         let (socket, addr) = match listener.accept().await {
+            
             Ok(pair) => pair,
+            
             Err(e) => {
                 error!("[ERROR]\t\tIncoming connection error: {e}");
                 continue;

@@ -1,11 +1,13 @@
 use rand::Rng;
+use chrono::{DateTime, Utc};
+use shared::{coordinates::Coordinates, update_position::UpdatePosition};
 use std::path::Path;
-use tokio::fs::{self, File};
+use tokio::fs::{self, File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
 
 
-// Genera un file di testo contenente posizioni geografiche random
+// Genera un punto di partenza casuale per un nuovo tracciato.
 
 fn random_start_point(rng: &mut rand::rngs::ThreadRng) -> (f64, f64) {
 
@@ -22,7 +24,7 @@ fn random_start_point(rng: &mut rand::rngs::ThreadRng) -> (f64, f64) {
 
 
 
-// Calcola la nuova coordinata geografica
+// Calcola la nuova coordinata geografica simulando lo spostamento di un veicolo.
 
 fn move_point_by_meters(lat: f64, lon: f64, distance_m: f64, bearing_deg: f64) -> (f64, f64) {
 
@@ -46,63 +48,72 @@ fn move_point_by_meters(lat: f64, lon: f64, distance_m: f64, bearing_deg: f64) -
 
 
 
-// Crea un file e lo popola con le coordinate geografiche
+// Genera una nuova posizione basandosi sulla precedente e la accoda al file locale.
 
-pub async fn create_random_path(file_path: &str) -> std::io::Result<()> {
+pub async fn append_random_position(
+    file_path: &str,
+    username: &str,
+    previous_position: Option<(f64, f64)>,
+) -> std::io::Result<((f64, f64), UpdatePosition)> {
 
-    let mut file = File::create(file_path).await?;
-    let mut rng = rand::thread_rng();
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(file_path)
+        .await?;
 
-    let mut current_latitude;
-    let mut current_longitude;
-    let mut elapsed_seconds = 0;
-    let total_points = rng.gen_range(10..=50);
-
-    (current_latitude, current_longitude) = random_start_point(&mut rng);
-
-    for _ in 0..total_points {
+    let position = {
+        let mut rng = rand::thread_rng();
+        let (current_latitude, current_longitude) = previous_position
+            .unwrap_or_else(|| random_start_point(&mut rng));
         let is_stopped = rng.gen_bool(0.15);
-        let distance_meters = if is_stopped {
-            0.0
-        } else {
-            rng.gen_range(0.0..=200.0)
-        };
-
+        let distance_meters = if is_stopped { 0.0 } else { rng.gen_range(0.0..=200.0) };
         let bearing_degrees = rng.gen_range(0.0..360.0);
-        let (new_latitude, new_longitude) =
-            move_point_by_meters(current_latitude, current_longitude, distance_meters, bearing_degrees);
-        current_latitude = new_latitude;
-        current_longitude = new_longitude;
 
-        let minutes = elapsed_seconds / 60;
-        let seconds = elapsed_seconds % 60;
-        let timestamp = format!("2026-07-08T07:{:02}:{:02}Z", minutes, seconds);
+        move_point_by_meters(
+            current_latitude,
+            current_longitude,
+            distance_meters,
+            bearing_degrees,
+        )
+    };
 
-        let row = format!("{},{},{}\n", current_latitude, current_longitude, timestamp);
-        file.write_all(row.as_bytes()).await?;
+    let time: DateTime<Utc> = Utc::now();
+    let row = format!("{},{},{}\n", position.0, position.1, time.to_rfc3339());
+    file.write_all(row.as_bytes()).await?;
 
-        elapsed_seconds += 30;
-    }
+    let coordinates = Coordinates::new(position.0.to_string(), position.1.to_string(), time.timestamp());
+    
+    let update = UpdatePosition {
+        username: username.to_string(),
+        coordinates,
+        time,
+    };
 
-    Ok(())
+    Ok((position, update))
 }
 
 
 
-// Verifica l'esistenza della cartella utente e genera il file del percorso se mancante.
-// Crea le directory necessarie in modo asincrono e invoca la generazione
-// del file con le coordinate fittizie se l'utente accede per la prima volta.
+// Controlla l'esistenza del path utente e inizializza i file necessari.
 
 pub async fn ensure_user_path_exists(username: &str, user_dir: &str, file_path: &str) -> std::io::Result<()> {
     
     let path = Path::new(user_dir);
 
     if !path.exists() {
+        
         println!("\nCreating the user folder and simulated path for \x1b[36m{}\x1b[0m...", username);
         fs::create_dir_all(path).await?;
-        create_random_path(file_path).await?;
+        File::create(file_path).await?;
+        
     } else {
+        
         println!("\nUser '\x1b[36m{}\x1b[0m' exists. Reading existing route file...", username);
+        if !Path::new(file_path).exists() {
+            File::create(file_path).await?;
+        }
+
     }
 
     Ok(())

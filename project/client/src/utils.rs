@@ -35,6 +35,7 @@ pub async fn load_user_path(file_path: &str, username: &str) -> io::Result<Vec<U
             .map(|time| time.with_timezone(&chrono::Utc))
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let coordinates = Coordinates::new(values[0].clone(), values[1].clone(), time.timestamp());
+        
         let update_position = UpdatePosition {
             username: username.to_string(),
             coordinates,
@@ -111,7 +112,7 @@ pub fn spawn_reader_task(mut reader: Lines<BufReader<OwnedReadHalf>>) -> JoinHan
 
 
 
-// Riceve i messaggi dal canale MPSC e li trasmette sulla rete
+// Riceve i messaggi dal canale MPSC e li trasmette sulla rete.
 
 pub fn spawn_writer_task(mut rx: mpsc::Receiver<Outgoing>, mut write_half: OwnedWriteHalf) -> JoinHandle<()> {
 
@@ -131,27 +132,46 @@ pub fn spawn_writer_task(mut rx: mpsc::Receiver<Outgoing>, mut write_half: Owned
 
 
 
-// Esegue l'invio temporizzato delle coordinate geografiche dell'utente ogni
-// 30 secondi.
+// Esegue l'invio temporizzato delle coordinate geografiche dell'utente ogni 30 secondi.
+// Riprende dall'ultima posizione conosciuta.
 
-pub fn spawn_position_task(route: Vec<UpdatePosition>, tx: mpsc::Sender<Outgoing>, username: String) -> JoinHandle<()> {
+pub fn spawn_position_task(
+    file_path: String,
+    tx: mpsc::Sender<Outgoing>,
+    username: String,
+    last_position: Option<(f64, f64)>
+) -> JoinHandle<()> {
 
     tokio::spawn(async move {
-
-        let mut interval = tokio::time::interval(Duration::from_secs(30));
         
-        for update in route {
+        let mut previous_position = last_position;
 
-            interval.tick().await;
+        loop {
+            
+            tokio::time::sleep(Duration::from_secs(30)).await;
 
-            if tx.send(Outgoing::Position(update)).await.is_err() {
+            let position = match crate::path_manager::append_random_position(
+                &file_path,
+                &username,
+                previous_position,
+            )
+            .await
+            {
+                Ok(position) => position,
+                Err(error) => {
+                    eprintln!("Unable to save position: {error}");
+                    break;
+                }
+            };
 
+            previous_position = Some(position.0);
+            
+            if tx.send(Outgoing::Position(position.1)).await.is_err() {
                 break;
-
             }
         }
 
-        println!("\n\x1b[32mRoute completed for user {}.\x1b[0m", username);
+        println!("\n\x1b[32mRoute generation stopped for user {}.\x1b[0m", username);
 
     })
 }

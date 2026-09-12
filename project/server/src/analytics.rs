@@ -2,8 +2,6 @@ use chrono::{Datelike, Local, TimeZone};
 use shared::coordinates::Coordinates;
 use std::time::Duration;
 
-
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum AnalysisPeriod {
     CurrentDay,
@@ -15,23 +13,18 @@ pub enum AnalysisPeriod {
     },
 }
 
-
-
 // Configurazione dell'analisi.
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct AnalyticsConfig {
 
-    // Tolleranza veicolo fermo.
-    
     pub movement_threshold_meters: f64,
-
-    // Durata minima perché una sosta venga contata come pausa.
     pub pause_threshold: Duration,
+
 }
 
-
-
 impl Default for AnalyticsConfig {
+    
     fn default() -> Self {
         Self {
             movement_threshold_meters: 1.0,
@@ -40,25 +33,15 @@ impl Default for AnalyticsConfig {
     }
 }
 
-
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct MovementStatistics {
 
-    // Tragitto percorso: sequenza delle posizioni considerate.
     pub path: Vec<Coordinates>,
-
-    // Distanza totale percorsa in chilometri.
     pub total_distance_km: f64,
-
-    // Durata complessiva del movimento.
     pub movement_duration: Duration,
-
-    // Durata complessiva delle pause.
     pub pause_duration: Duration,
-
-    // Velocità media in km/h.
     pub average_speed_kmh: f64,
+
 }
 
 
@@ -80,6 +63,7 @@ pub fn analyze_movement( history: &[Coordinates], period: AnalysisPeriod, config
     coordinate.sort_by_key(|sample| sample.get_timestamp());
 
     if coordinate.len() < 2 {
+        
         return MovementStatistics {
             path: coordinate,
             total_distance_km: 0.0,
@@ -87,6 +71,7 @@ pub fn analyze_movement( history: &[Coordinates], period: AnalysisPeriod, config
             pause_duration: Duration::from_secs(0),
             average_speed_kmh: 0.0,
         };
+
     }
 
     let mut total_distance_km = 0.0;

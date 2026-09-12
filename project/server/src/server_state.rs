@@ -1,15 +1,15 @@
 use std::{collections::HashMap, time::Duration, path::{PathBuf, Path}, io};
 use log::{info, error};
 use tokio::sync::{mpsc, RwLock};
+use chrono::DateTime;
 use tokio::time::interval;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use shared::{coordinates::Coordinates, messages::Message, parse_values};
 use tokio::fs::{self, OpenOptions};
-use tokio::io::AsyncWriteExt;
-use shared::messages::Message;
 use cpu_time::ProcessTime;
 use shared::update_position::UpdatePosition;
 use crate::tracker_state::TrackerState;
 
-// Rappresenta la memoria centrale del server in esecuzione con il registro connessioni.
 pub struct ServerState {
 
     pub connections: RwLock<HashMap<String, mpsc::Sender<Message>>>,
@@ -19,9 +19,11 @@ pub struct ServerState {
 
 }
 
-impl ServerState {
 
-    // Crea una nuova istanza vuota dello stato del server.
+
+// Crea una nuova istanza vuota dello stato del server.
+
+impl ServerState {
 
     pub fn new() -> Self {
 
@@ -70,7 +72,7 @@ impl ServerState {
     }
 
 
-
+    
     // Verifica rapidamente se un determinato utente è attualmente connesso.
 
     pub async fn is_online(&self, username: &str) -> bool {
@@ -174,23 +176,19 @@ impl ServerState {
 
     pub async fn broadcast(&self, msg: Message) {
 
-        let usernames: Vec<String> = {
-
+        let senders: Vec<mpsc::Sender<Message>> = {
             let connections = self.connections.read().await;
-            connections.keys().cloned().collect()
-
+            connections.values().cloned().collect()
         };
 
-        for user in usernames {
-
-            let _ = self.direct_message(&user, msg.clone()).await;
-
+        for tx in senders {
+            let _ = tx.send(msg.clone()).await;
         }
     }
 
 
 
-    // Avvia un task in background per la scrittura su file dei log CPU ogni 120 secondi
+    // Avvia un task in background per la scrittura su file dei log CPU ogni 120 secondi.
     
     pub async fn start_log_cpu_usage() {
 
@@ -228,6 +226,7 @@ impl ServerState {
 
 
     // Interroga il sistema operativo per calcolare il tempo di CPU consumato.
+
     fn get_cpu_time() -> Option<Duration> {
         let cpu_now = ProcessTime::now();
         Some(cpu_now.as_duration())
@@ -248,13 +247,12 @@ impl ServerState {
 
 
 
-    // Scrive materialmente l'utilizzo della CPU sul log di testo
+    // Scrive materialmente l'utilizzo della CPU sul log di testo.
 
     async fn write_cpu_usage(cpu_time: f64, cpu_percent: f64) -> Result<(), std::io::Error> {
         
         let path = Self::get_log_dir();
         let log_dir = format!("{}/{}", env!("CARGO_MANIFEST_DIR"), path);
-        
         
         tokio::fs::create_dir_all(&log_dir).await?;
 
@@ -277,11 +275,99 @@ impl ServerState {
 
 
     // Smista un nuovo pacchetto di aggiornamento coordinate allo stato di tracciamento.
+
     pub async fn process_packet(&self, packet: UpdatePosition) {
 
         let mut users = self.users.write().await;
         let tracker = users.entry(packet.username.clone()).or_insert_with(TrackerState::new);
         tracker.update_position(&packet);
 
+    }
+
+
+
+    // Legge e carica lo storico delle posizioni dell'utente dal file su disco.
+
+    pub async fn load_user_history(username: &str) -> std::io::Result<Vec<UpdatePosition>> {
+        
+
+        let base_dir = format!("{}/data/{username}", env!("CARGO_MANIFEST_DIR"));
+        // tokio::fs::create_dir_all(&base_dir).await?; Capire se toglierla
+        let file_path = format!("{}/route.txt", base_dir);
+
+        let file = match tokio::fs::File::open(file_path).await {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(error),
+        };
+
+        let mut history = Vec::new();
+        let mut lines = BufReader::new(file).lines();
+
+        while let Some(line) = lines.next_line().await? {
+            
+            let values = parse_values(&line);
+            
+            if values.len() < 3 {
+                continue;
+            }
+
+            let time = DateTime::parse_from_rfc3339(&values[2])
+                .map(|time| time.with_timezone(&chrono::Utc))
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?;
+
+            history.push(UpdatePosition {
+                username: username.to_string(),
+                coordinates: Coordinates::new(values[0].clone(), values[1].clone(), time.timestamp()),
+                time,
+            });
+        }
+
+        Ok(history)
+    }
+
+
+
+    // Popola lo stato vitale in RAM simulando la ri-esecuzione dello storico posizioni.
+
+    pub async fn restore_user_history(&self, username: &str, history: Vec<UpdatePosition>) {
+        
+        let contains = self.users.read().await.contains_key(username);
+
+        if contains {
+            return;
+        }
+
+        for position in history {
+            self.process_packet(position).await;
+        }
+    }
+
+
+
+    // Salva un singolo pacchetto posizione sul disco appendendolo al log storico.
+
+    pub async fn save_position(username: &str, packet: &UpdatePosition) -> std::io::Result<()> {
+        
+
+        let base_dir = format!("{}/data/{username}", env!("CARGO_MANIFEST_DIR"));
+        tokio::fs::create_dir_all(&base_dir).await?;
+        let file_path = format!("{}/route.txt", base_dir);
+    
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_path)
+            .await?;
+
+        let row = format!(
+            "{},{},{}\n",
+            packet.coordinates.get_latitude(),
+            packet.coordinates.get_longitude(),
+            packet.time.to_rfc3339()
+        );
+
+        file.write_all(row.as_bytes()).await?;
+        file.flush().await
     }
 }
