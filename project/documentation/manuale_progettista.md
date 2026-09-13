@@ -18,7 +18,7 @@ flowchart LR
     S[Server TCP]
     H[ServerState]
     D[(accounts.json)]
-    F[(logs/-Os-/cpu_performance.log)]
+    F[(logs/<os>/cpu_performance.log)]
     U[(users/<username>/route.txt)]
     SH[Crate shared]
 
@@ -136,10 +136,10 @@ Fornisce le funzioni comuni:
 4. crea un `TcpListener` su `127.0.0.1:8080`;
 5. accetta connessioni in un ciclo infinito;
 6. crea un task Tokio per ogni client.
-7. salva le coordinate passate in input per ogni client.
+7. gestisce e salva le coordinate ricevute da ogni client autenticato.
 
 
-Lo stato condiviso è contenuto in `Arc<Mutex<ServerState>>`. Il mutex serializza le modifiche allo stato condiviso tra le connessioni concorrenti.
+Lo stato condiviso è un `Arc<ServerState>`, clonato e passato ai task delle connessioni. I campi mutabili di `ServerState` (`connections`, `accounts` e `users`) sono protetti individualmente da `tokio::sync::RwLock`: più task possono effettuare letture simultanee, mentre una scrittura acquisisce l'accesso esclusivo al campo interessato. `Arc` gestisce la proprietà condivisa dello stato, mentre i singoli `RwLock` garantiscono la sincronizzazione asincrona delle mappe.
 
 ### 5.2 Stato applicativo: `server/src/server_state.rs`
 
@@ -401,9 +401,9 @@ Per un messaggio diretto il server cerca il destinatario in `connections` e invi
 
 Tokio gestisce runtime, socket TCP, file, timer, task e canali. Le operazioni lente o concorrenti non bloccano il ciclo principale del server o del client.
 
-### `Arc<Mutex<ServerState>>`
+### `Arc<ServerState>` e `RwLock`
 
-Lo stato del server è condiviso tra i task che gestiscono i client. `Arc` permette la condivisione della proprietà, mentre `Mutex` protegge mappe e storico da accessi concorrenti.
+Lo stato del server è condiviso tra i task che gestiscono i client tramite `Arc`. `ServerState` non è racchiuso in un mutex globale: le mappe `connections`, `accounts` e `users` contengono ciascuna un `tokio::sync::RwLock`. Le operazioni di sola lettura acquisiscono un read lock condivisibile, mentre registrazioni, logout, aggiornamenti dello storico e altre modifiche acquisiscono un write lock esclusivo sulla mappa interessata. Questo limita la contesa rispetto a un unico lock attorno all'intero stato.
 
 ### Canali `mpsc`
 
@@ -428,23 +428,23 @@ Il progetto usa file JSON e file di testo invece di un database:
 
 ## 9. Test
 
-I test sono in `server/tests/` e coprono:
+I test sono in `server/tests/` e sono progettati per coprire:
 
 - registrazione, validazione username, password e autenticazione;
 - salvataggio/caricamento degli account;
 - analytics e periodi temporali;
 - transizioni di stato del tracker.
-- performance CPU e scrittura log.
+- performance CPU, traffico simulato e scrittura log.
 
 I file in `tests/` sono integration test separati. Poiche il package server espone attualmente un binario e non una libreria, i test includono con `#[path = "../src/..."]` i moduli necessari. Questa soluzione permette a Cargo e Rust Analyzer di riconoscere i singoli file senza modificare i file applicativi.
 
 Per eseguire un singolo file:
 
 ```powershell
-cargo test --manifest-path project/server/Cargo.toml --test analytics_test
-cargo test --manifest-path project/server/Cargo.toml --test auth_test
-cargo test --manifest-path project/server/Cargo.toml --test tracker_state_transition_test
-cargo test --manifest-path project/client/Cargo.toml --test performance_stress_test
+cargo test --manifest-path project/code/server/Cargo.toml --test analytics_test
+cargo test --manifest-path project/code/server/Cargo.toml --test auth_test
+cargo test --manifest-path project/code/server/Cargo.toml --test tracker_state_transition_test
+cargo test --manifest-path project/code/client/Cargo.toml --test performance_stress_test
 ```
 
 
