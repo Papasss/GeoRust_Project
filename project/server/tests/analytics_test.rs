@@ -1,14 +1,14 @@
+#[path = "../src/analytics.rs"]
+mod analytics;
+
 #[cfg(test)]
 mod tests {
-    
-    use super::*;
+    use super::analytics::{analyze_movement, AnalysisPeriod, AnalyticsConfig};
+    use shared::coordinates::Coordinates;
+    use std::time::Duration;
 
-    fn sample(timestamp: u64, latitude: f64, longitude: f64) -> Coordinates {
-        Coordinates {
-            latitude,
-            longitude,
-            timestamp,
-        }
+    fn sample(timestamp: i64, latitude: f64, longitude: f64) -> Coordinates {
+        Coordinates::new(latitude.to_string(), longitude.to_string(), timestamp)
     }
 
     fn test_config() -> AnalyticsConfig {

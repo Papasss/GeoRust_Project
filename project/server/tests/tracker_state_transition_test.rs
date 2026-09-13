@@ -1,5 +1,10 @@
+#[path = "../src/analytics.rs"]
+mod analytics;
+#[path = "../src/tracker_state.rs"]
+mod tracker_state;
+
 use chrono::DateTime;
-use server::tracker_state::TrackerState;
+use tracker_state::TrackerState;
 use shared::coordinates::Coordinates;
 use shared::update_position::UpdatePosition;
 use shared::user_state::UserState;
