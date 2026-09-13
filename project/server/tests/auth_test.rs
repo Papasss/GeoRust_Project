@@ -1,8 +1,17 @@
 
+#[path = "../src/analytics.rs"]
+mod analytics;
+#[path = "../src/tracker_state.rs"]
+mod tracker_state;
+#[path = "../src/server_state.rs"]
+mod server_state;
+#[path = "../src/auth.rs"]
+mod auth;
+
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::server_state::ServerState;
+    use super::auth::AuthError;
+    use super::server_state::ServerState;
     use serial_test::serial;
 
     fn setup_state() -> ServerState {
