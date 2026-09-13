@@ -168,6 +168,7 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
                 Message::AnalyticsRequest { field, period } => {
 
+                    info!("[ANALYTICS]\tAnalytics request from:\t{}", username);
                     let response = handle_analytics_request(username, field, period, state).await;
                     send_to_logged_user(username, response, state).await;
                 
@@ -175,6 +176,7 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
                 Message::SendDirectMessage { to, text } => {
 
+                    info!("[MESSAGE]\tDirect message request received from:\t{}", username);
                     let _ = state.direct_message(
                         &to, 
                         Message::IncomingDirectMessage { from: username.to_string(), text }
@@ -184,6 +186,7 @@ async fn process_client_messages(reader: &mut Lines<BufReader<OwnedReadHalf>>, s
 
                 Message::SendBroadcastMessage { text } => {
 
+                    info!("[MESSAGE]\tBroadcast message request received from:\t{}", username);
                     state.broadcast(
                         Message::IncomingBroadcastMessage { from: username.to_string(), text }
                     ).await;

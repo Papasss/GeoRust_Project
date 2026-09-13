@@ -1,7 +1,9 @@
 #[cfg(test)]
 mod tests {
     
-    use super::*;
+    use shared::coordinates::Coordinates;
+
+use super::*;
 
     fn sample(timestamp: u64, latitude: f64, longitude: f64) -> Coordinates {
         Coordinates {

@@ -8,6 +8,7 @@ use chrono::Utc;
 use rand::Rng;
 
 fn move_point_by_meters(lat: f64, lon: f64, distance_m: f64, bearing_deg: f64) -> (f64, f64) {
+
     const EARTH_RADIUS_M: f64 = 6_371_000.0;
     let bearing = bearing_deg.to_radians();
     let angular_distance = distance_m / EARTH_RADIUS_M;
@@ -28,12 +29,18 @@ fn move_point_by_meters(lat: f64, lon: f64, distance_m: f64, bearing_deg: f64) -
 
 #[tokio::test]
 async fn run_performance_stress_test() {
-    println!("Inizio stress test con comportamento randomico e bassa probabilità di sosta...");
+    println!("Avvio stress test con comportamento flotta realistico...");
     let mut handles = vec![];
 
     for i in 0..1000 {
         let handle = tokio::spawn(async move {
-            tokio::time::sleep(Duration::from_millis(i * 300)).await;
+            
+
+            let startup_delay_ms = {
+                let mut rng = rand::thread_rng();
+                rng.gen_range(100..=5000)
+            };
+            tokio::time::sleep(Duration::from_millis(startup_delay_ms)).await;
 
             let stream_res = TcpStream::connect("127.0.0.1:8080").await;
             let mut stream = match stream_res {
@@ -71,26 +78,24 @@ async fn run_performance_stress_test() {
 
             let u_clone = username.clone();
             tokio::spawn(async move {
-                while let Ok(Some(line)) = reader.next_line().await {
-                    println!("\n[RAW RECEIVED BY {}] ---> {}", u_clone, line);
+                while let Ok(Some(_line)) = reader.next_line().await {
+                    // Mantiene vuoto il buffer TCP per evitare stalli in ricezione
                 }
             });
 
-            let (mut current_lat, mut current_lon) = {
-                let mut rng_init = rand::thread_rng();
+            let (mut current_lat, mut current_lon, mut action_countdown) = {
+                let mut rng = rand::thread_rng();
                 (
-                    rng_init.gen_range(44.9..=45.2),
-                    rng_init.gen_range(7.5..=7.9)
+                    rng.gen_range(44.9..=45.2),
+                    rng.gen_range(7.5..=7.9),
+                    rng.gen_range(2..=6)
                 )
             };
 
-            let mut step_counter = 0;
-
             loop {
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                step_counter += 1;
 
-                // Evento randomico a ogni invio coordinata: probabilità bassa (15%) di fermarsi
+                tokio::time::sleep(Duration::from_secs(30)).await;
+
                 let (distance_meters, bearing_degrees) = {
                     let mut rng = rand::thread_rng();
                     let is_stopped = rng.gen_bool(0.15);
@@ -126,30 +131,40 @@ async fn run_performance_stress_test() {
                     break;
                 }
 
-                if step_counter % 3 == 0 {
-                    let broadcast_msg = Message::SendBroadcastMessage { 
-                        text: format!("Broadcast da {}", username) 
-                    };
-                    let json_bc = serde_json::to_string(&broadcast_msg).unwrap();
-                    let _ = write_half.write_all(format!("{json_bc}\n").as_bytes()).await;
-                }
+                let action_to_perform = {
+                    action_countdown -= 1;
+                    if action_countdown <= 0 {
+                        let mut rng = rand::thread_rng();
+                        action_countdown = rng.gen_range(2..=6);
+                        Some(rng.gen_bool(0.5))
+                    } else {
+                        None
+                    }
+                };
 
-                if step_counter % 5 == 0 {
-                    let analytics_msg = Message::AnalyticsRequest {
-                        field: AnalyticsField::All,
-                        period: AnalyticsPeriodMessage::Custom {
-                            start_timestamp: 0,
-                            end_timestamp: i64::MAX,
-                        },
-                    };
-                    let json_an = serde_json::to_string(&analytics_msg).unwrap();
-                    let _ = write_half.write_all(format!("{json_an}\n").as_bytes()).await;
+                if let Some(is_broadcast) = action_to_perform {
+                    if is_broadcast {
+                        let broadcast_msg = Message::SendBroadcastMessage { 
+                            text: format!("Avviso di viabilità da {}", username) 
+                        };
+                        let json_bc = serde_json::to_string(&broadcast_msg).unwrap();
+                        let _ = write_half.write_all(format!("{json_bc}\n").as_bytes()).await;
+                    } else {
+                        let analytics_msg = Message::AnalyticsRequest {
+                            field: AnalyticsField::All,
+                            period: AnalyticsPeriodMessage::Custom {
+                                start_timestamp: 0,
+                                end_timestamp: i64::MAX,
+                            },
+                        };
+                        let json_an = serde_json::to_string(&analytics_msg).unwrap();
+                        let _ = write_half.write_all(format!("{json_an}\n").as_bytes()).await;
+                    }
                 }
             }
         });
         handles.push(handle);
     }
 
-    println!("Stress test avviato con mobilità stocastica (soste a bassa probabilità)...");
-    tokio::time::sleep(Duration::from_secs(60)).await;
+    tokio::time::sleep(Duration::from_secs(60*10)).await;
 }

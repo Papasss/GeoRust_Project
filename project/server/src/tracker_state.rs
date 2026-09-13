@@ -41,30 +41,6 @@ impl TrackerState {
 
 
 
-    // Restituisce un rapido riferimento in sola lettura all'ultima posizione registrata.
-
-    pub fn get_coordinates(&self) -> &Option<Coordinates> {
-        &self.last_coordinates
-    }
-
-
-
-    // Estrae e fornisce all'esterno l'attuale stato dinamico dell'utente.
-
-    pub fn get_state(&self) -> &UserState {
-        &self.state
-    }
-
-
-
-    // Restituisce il puntatore temporale corrispondente al momento dell'ultimo movimento.
-
-    pub fn get_last_move(&self) -> &Option<DateTime<chrono::Utc>> {
-        &self.last_move
-    }
-
-
-
     // Rende accessibile l'intero storico delle coordinate memorizzate in sessione.
 
     pub fn get_history(&self) -> &Vec<UpdatePosition> {

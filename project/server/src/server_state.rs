@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Duration, path::{PathBuf, Path}, io};
+use std::{collections::HashMap, time::Duration, path::{PathBuf}, io};
 use log::{info, error};
 use tokio::sync::{mpsc, RwLock};
 use chrono::DateTime;
@@ -40,14 +40,6 @@ impl ServerState {
 
 
 
-    // Restituisce il percorso fisico al file JSON degli account.
-
-    pub fn accounts_file_path(&self) -> &Path {
-        &self.accounts_file_path
-    }
-
-
-
     // Registra un utente come connesso all'interno del server.
 
     pub async fn try_login(&self, username: &str, sender: mpsc::Sender<Message>) -> Result<(), String> {
@@ -69,14 +61,6 @@ impl ServerState {
 
     pub async fn logout(&self, username: &str) {
         self.connections.write().await.remove(username);
-    }
-
-
-    
-    // Verifica rapidamente se un determinato utente è attualmente connesso.
-
-    pub async fn is_online(&self, username: &str) -> bool {
-        self.connections.read().await.contains_key(username)
     }
 
 
