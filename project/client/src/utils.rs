@@ -35,6 +35,7 @@ pub async fn load_user_path(file_path: &str, username: &str) -> io::Result<Vec<U
             .map(|time| time.with_timezone(&chrono::Utc))
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         let coordinates = Coordinates::new(values[0].clone(), values[1].clone(), time.timestamp());
+        
         let update_position = UpdatePosition {
             username: username.to_string(),
             coordinates,
@@ -64,6 +65,7 @@ pub async fn read_line_async(prompt: String) -> String {
         io::stdin().read_line(&mut input).expect("Error reading input");
         
         input.trim().to_string()
+
     }).await.expect("Error in I/O Thread!")
 
 }
@@ -83,21 +85,22 @@ pub fn spawn_reader_task(mut reader: Lines<BufReader<OwnedReadHalf>>) -> JoinHan
                 match msg {
 
                     Message::IncomingDirectMessage { from, text } => {
-                        println!("\n[Private message from {}]: {}", from, text);
+                        println!("\n[\x1b[36mPrivate message from {}\x1b[0m]: {}", from, text);
                     }
 
                     Message::IncomingBroadcastMessage { from, text } => {
-                        println!("\n[Broadcast from {}]: {}", from, text);
+                        println!("\n[\x1b[33mBroadcast from {}\x1b[0m]: {}", from, text);
                     }
 
                     Message::AnalyticsResponse(response) => {
-                        println!("\n=== Risultato analytics ===");
-                        println!("{response}");
-                        println!("===========================\n");
+                        println!("\n\x1b[32m╔════════════════════════════════════╗\x1b[0m");
+                        println!("\x1b[32m║         ANALYTICS RESULT           ║\x1b[0m");
+                        println!("\x1b[32m╚════════════════════════════════════╝\x1b[0m");
+                        println!("{response}\n");
                     }
 
                     Message::AnalyticsErr(error) => {
-                        eprintln!("\nErrore analytics: {error}\n");
+                        eprintln!("\n\x1b[31mAnalytics Error:\x1b[0m {error}\n");
                     }
 
                     _ => {} 
@@ -109,7 +112,7 @@ pub fn spawn_reader_task(mut reader: Lines<BufReader<OwnedReadHalf>>) -> JoinHan
 
 
 
-// Riceve i messaggi dal canale MPSC e li trasmette sulla rete
+// Riceve i messaggi dal canale MPSC e li trasmette sulla rete.
 
 pub fn spawn_writer_task(mut rx: mpsc::Receiver<Outgoing>, mut write_half: OwnedWriteHalf) -> JoinHandle<()> {
 
@@ -129,19 +132,22 @@ pub fn spawn_writer_task(mut rx: mpsc::Receiver<Outgoing>, mut write_half: Owned
 
 
 
-// Esegue l'invio temporizzato delle coordinate geografiche dell'utente ogni
-// 30 secondi.
+// Esegue l'invio temporizzato delle coordinate geografiche dell'utente ogni 30 secondi.
+// Riprende dall'ultima posizione conosciuta.
 
 pub fn spawn_position_task(
     file_path: String,
     tx: mpsc::Sender<Outgoing>,
     username: String,
+    last_position: Option<(f64, f64)>
 ) -> JoinHandle<()> {
 
     tokio::spawn(async move {
-        let mut previous_position = None;
+        
+        let mut previous_position = last_position;
 
         loop {
+            
             tokio::time::sleep(Duration::from_secs(30)).await;
 
             let position = match crate::path_manager::append_random_position(
@@ -159,10 +165,13 @@ pub fn spawn_position_task(
             };
 
             previous_position = Some(position.0);
+            
             if tx.send(Outgoing::Position(position.1)).await.is_err() {
                 break;
             }
         }
+
+        println!("\n\x1b[32mRoute generation stopped for user {}.\x1b[0m", username);
 
     })
 }

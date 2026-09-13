@@ -60,7 +60,7 @@ where
     W: AsyncWrite + Unpin,
 {
     let json_data = serde_json::to_string(packet)
-        .expect("Errore critico nella serializzazione JSON");
+        .expect("Error while serializing JSON");
         
     writer.write_all(format!("{}\n", json_data).as_bytes()).await?;
     writer.flush().await
