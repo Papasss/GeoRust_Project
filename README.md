@@ -21,7 +21,7 @@ Ci siamo concentrati molto sulle performance, cercando di mantenere l'applicativ
 
 ## Architettura del Codice
 
-Per mantenere il codice pulito e non pestarci i piedi a vicenda, abbiamo strutturato il progetto usando un **Cargo Workspace** diviso in tre moduli principali:
+Per mantenere il codice pulito, abbiamo strutturato il progetto usando un **Cargo Workspace** diviso in tre moduli principali:
 
 * **`shared/`**: È la libreria condivisa, il vero e proprio vocabolario comune tra client e server. Qui dentro si trovano i tipi base e le strutture dati serializzabili (grazie a `serde`), come le coordinate geografiche e i pacchetti dei messaggi.
 * **`client/`**: Il software di bordo. Legge un percorso simulato da un file locale e invia un "ping" con la posizione esatta al server ogni 30 secondi. Permette inoltre di chattare in tempo reale.
