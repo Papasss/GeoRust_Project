@@ -12,10 +12,10 @@ Ci siamo concentrati molto sulle performance, cercando di mantenere l'applicativ
 ---
 
 ## Indice
-1. [Architettura del Codice](#-architettura-del-codice)
-2. [Funzionalità Principali](#-funzionalità-principali)
-3. [La Macchina a Stati](#-la-macchina-a-stati)
-4. [Requisiti e Installazione](#-requisiti-e-installazione)
+1. [Architettura del Codice](#architettura-del-codice)
+2. [Funzionalità Principali](#funzionalità-principali)
+3. [La Macchina a Stati](#la-macchina-a-stati)
+4. [Requisiti e Installazione](#requisiti-e-installazione)
 
 ---
 
@@ -45,11 +45,42 @@ Per mantenere il codice pulito e non pestarci i piedi a vicenda, abbiamo struttu
 
 ---
 
-## Logica di tracking
+## La Macchina a Stati
 
 Il server non si limita a salvare le coordinate, ma deduce cosa sta facendo il veicolo tramite una piccola macchina a stati temporale. Un veicolo può trovarsi in tre situazioni: **Sconnesso**, **Fermo** e **In Movimento**.
 
 Le regole di transizione sono semplici:
 * **Diventare "In Movimento":** Scatta al volo, non appena il server riceve una coordinata spaziale diversa dall'ultima registrata.
 * **Diventare "Fermo":** Per evitare falsi parcheggi, il server considera un veicolo effettivamente fermo solo se riceve la stessa identica coordinata per almeno 3 minuti.
+
+---
+
+## Requisiti e Installazione
+
+Per compilare ed eseguire il progetto sono necessari:
+
+* [Rust e Cargo](https://www.rust-lang.org/tools/install), con una versione compatibile con Rust edition 2024;
+* una connessione di rete locale tra client e server, se vengono eseguiti su macchine diverse.
+
+Il progetto si trova nella directory `project/code/`, che contiene il workspace Cargo. Per compilare tutti i moduli:
+
+```bash
+cd project/code
+cargo build
+```
+
+Per eseguire i test:
+
+```bash
+cargo test
+```
+
+Per avviare il server o il client:
+
+```bash
+cargo run -p server
+cargo run -p client
+```
+
+Il client utilizza i file di dati e i percorsi presenti nella sua directory di progetto; prima dell'avvio assicurarsi che tali file siano disponibili nel percorso previsto dall'applicazione.
 ---
