@@ -14,7 +14,7 @@ Ci siamo concentrati molto sulle performance, cercando di mantenere l'applicativ
 ## Indice
 1. [Architettura del Codice](#architettura-del-codice)
 2. [Funzionalità Principali](#funzionalità-principali)
-3. [La Macchina a Stati](#la-macchina-a-stati)
+3. [Logica di Tracking](#logica-di-tracking)
 4. [Requisiti e Installazione](#requisiti-e-installazione)
 
 ---
@@ -45,7 +45,7 @@ Per mantenere il codice pulito, abbiamo strutturato il progetto usando un **Carg
 
 ---
 
-## La Macchina a Stati
+## Logica di Tracking
 
 Il server non si limita a salvare le coordinate, ma deduce cosa sta facendo il veicolo tramite una piccola macchina a stati temporale. Un veicolo può trovarsi in tre situazioni: **Sconnesso**, **Fermo** e **In Movimento**.
 
@@ -82,5 +82,5 @@ cargo run -p server
 cargo run -p client
 ```
 
-Il client utilizza i file di dati e i percorsi presenti nella sua directory di progetto; prima dell'avvio assicurarsi che tali file siano disponibili nel percorso previsto dall'applicazione.
+#### Il client utilizza i file di dati e i percorsi presenti nella sua directory di progetto; prima dell'avvio assicurarsi che tali file siano disponibili nel percorso previsto dall'applicazione.
 ---
